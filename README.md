@@ -1,8 +1,8 @@
 # json-render
 
-**Predictable. Guardrailed. Fast.**
+**The framework for User-Generated Interfaces (UGI).**
 
-Let end users generate dashboards, widgets, apps, and videos from prompts — safely constrained to components you define.
+Dynamic, personalized UIs per user without sacrificing reliability. Predefined components and actions for safe, predictable output.
 
 ```bash
 npm install @json-render/core @json-render/react
@@ -14,11 +14,12 @@ npm install @json-render/core @json-render/remotion
 
 ## Why json-render?
 
-When users prompt for UI, you need guarantees. json-render gives AI a **constrained vocabulary** so output is always predictable:
+json-render enables **User-Generated Interfaces**: dynamic UIs that end users create through natural language prompts, powered by Generative UI. You define the guardrails, AI generates within them:
 
-- **Guardrailed** — AI can only use components in your catalog
-- **Predictable** — JSON output matches your schema, every time
-- **Fast** — Stream and render progressively as the model responds
+- **Guardrailed** - AI can only use components in your catalog
+- **Predictable** - JSON output matches your schema, every time
+- **Fast** - Stream and render progressively as the model responds
+- **Cross-Platform** - React (web) and React Native (mobile) from the same catalog
 
 ## Quick Start
 
@@ -237,8 +238,8 @@ Any prop value can be data-driven using expressions:
 
 Two expression forms:
 
-- **`{ "$path": "/state/key" }`** -- reads a value from the data model
-- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** -- evaluates a condition (same syntax as visibility conditions) and picks a branch
+- **`{ "$path": "/state/key" }`** - reads a value from the data model
+- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - evaluates a condition (same syntax as visibility conditions) and picks a branch
 
 ### Actions
 
@@ -265,9 +266,9 @@ pnpm install
 pnpm dev
 ```
 
-- http://localhost:3000 -- Docs & Playground
-- http://localhost:3001 -- Example Dashboard
-- http://localhost:3002 -- Remotion Video Example
+- http://localhost:3000 - Docs & Playground
+- http://localhost:3001 - Example Dashboard
+- http://localhost:3002 - Remotion Video Example
 - React Native example: run `npx expo start` in `examples/react-native`
 
 ## How It Works
@@ -283,10 +284,10 @@ flowchart LR
     D -.- G([streamed])
 ```
 
-1. **Define the guardrails** — what components, actions, and data bindings AI can use
-2. **Users prompt** — end users describe what they want in natural language
-3. **AI generates JSON** — output is always predictable, constrained to your catalog
-4. **Render fast** — stream and render progressively as the model responds
+1. **Define the guardrails** - what components, actions, and data bindings AI can use
+2. **Users generate** - end users describe what they want in natural language
+3. **AI generates JSON** - output is always predictable, constrained to your catalog
+4. **Render fast** - stream and render progressively as the model responds
 
 ## License
 

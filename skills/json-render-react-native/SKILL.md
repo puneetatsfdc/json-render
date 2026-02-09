@@ -110,8 +110,8 @@ Use `Pressable` with the built-in `setState` action for interactive UIs like tab
 
 Any prop value can be a data-driven expression resolved at render time:
 
-- **`{ "$path": "/state/key" }`** -- reads from data model
-- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** -- conditional value
+- **`{ "$path": "/state/key" }`** - reads from data model
+- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - conditional value
 
 ```json
 {
@@ -123,7 +123,7 @@ Any prop value can be a data-driven expression resolved at render time:
 }
 ```
 
-Components receive already-resolved props -- no changes needed to component implementations.
+Components receive already-resolved props. No changes needed to component implementations.
 
 ## Built-in Actions
 

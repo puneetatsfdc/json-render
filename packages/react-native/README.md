@@ -59,7 +59,7 @@ export const { registry } = defineRegistry(catalog, {
 });
 ```
 
-Standard components (Container, Row, Column, Button, TextInput, etc.) are included by default -- you only need to register custom ones.
+Standard components (Container, Row, Column, Button, TextInput, etc.) are included by default. You only need to register custom ones.
 
 ### 3. Render Specs
 

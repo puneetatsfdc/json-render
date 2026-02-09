@@ -22,11 +22,15 @@ export const metadata: Metadata = {
     template: "%s | json-render",
   },
   description:
-    "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+    "The framework for User-Generated Interfaces (UGI). Let users generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
   keywords: [
     "json-render",
+    "UGI",
+    "User-Generated Interfaces",
     "AI UI generation",
+    "generative UI",
     "React components",
+    "React Native",
     "guardrails",
     "structured output",
     "dashboard builder",
@@ -38,23 +42,23 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://json-render.dev",
     siteName: "json-render",
-    title: "json-render | AI-generated UI with guardrails",
+    title: "json-render | The framework for User-Generated Interfaces",
     description:
-      "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+      "The framework for User-Generated Interfaces (UGI). Let users generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
     images: [
       {
         url: "/og",
         width: 1200,
         height: 630,
-        alt: "json-render - AI-generated UI with guardrails",
+        alt: "json-render - The framework for User-Generated Interfaces",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "json-render | AI-generated UI with guardrails",
+    title: "json-render | The framework for User-Generated Interfaces",
     description:
-      "Let users generate dashboards, widgets, apps, and data visualizations from prompts — safely constrained to components you define.",
+      "The framework for User-Generated Interfaces (UGI). Let users generate dashboards, widgets, and apps from prompts — safely constrained to components you define.",
     images: ["/og"],
     creator: "@verabornnot",
   },

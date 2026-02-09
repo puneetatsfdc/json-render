@@ -9,12 +9,15 @@ export default function Home() {
     <>
       {/* Hero */}
       <section className="max-w-5xl mx-auto px-6 pt-24 pb-16 text-center">
-        <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tighter mb-6">
+        <p className="text-xs sm:text-sm font-medium text-muted-foreground tracking-widest uppercase mb-4">
+          The framework for User-Generated Interfaces
+        </p>
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tighter mb-6">
           AI → json-render → UI
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
-          Define a component catalog. Users prompt. AI outputs JSON constrained
-          to your catalog. Your components render it.
+          Dynamic, personalized UIs per user without sacrificing reliability.
+          Predefined components and actions for safe, predictable output.
         </p>
 
         <Demo />
@@ -65,10 +68,10 @@ export default function Home() {
               <div className="text-xs text-muted-foreground font-mono mb-3">
                 02
               </div>
-              <h3 className="text-lg font-semibold mb-2">Users Prompt</h3>
+              <h3 className="text-lg font-semibold mb-2">Users Generate</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 End users describe what they want. AI generates JSON constrained
-                to your catalog.
+                to your catalog. Every interface is unique to the user.
               </p>
             </div>
             <div>
@@ -245,6 +248,10 @@ export default function Page() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {[
               {
+                title: "User-Generated Interfaces",
+                desc: "Dynamic, personalized UIs per user powered by Generative UI",
+              },
+              {
                 title: "Guardrails",
                 desc: "AI can only use components you define in the catalog",
               },
@@ -253,20 +260,16 @@ export default function Page() {
                 desc: "Progressive rendering as JSON streams from the model",
               },
               {
-                title: "Code Export",
-                desc: "Export as standalone React code with no runtime dependencies",
+                title: "React & React Native",
+                desc: "Render on web and mobile from the same catalog and spec format",
               },
               {
                 title: "Data Binding",
-                desc: "Two-way binding with JSON Pointer paths",
+                desc: "Two-way state binding with dynamic prop expressions",
               },
               {
-                title: "Actions",
-                desc: "Named actions handled by your application",
-              },
-              {
-                title: "Visibility",
-                desc: "Conditional show/hide based on data or auth",
+                title: "Code Export",
+                desc: "Export as standalone React code with no runtime dependencies",
               },
             ].map((feature) => (
               <div key={feature.title}>

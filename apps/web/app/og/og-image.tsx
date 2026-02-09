@@ -66,23 +66,27 @@ export async function renderOgImage(title: string) {
         style={{
           display: "flex",
           flex: 1,
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <span
-          style={{
-            fontSize: 72,
-            fontFamily: "Geist",
-            fontWeight: 400,
-            color: "white",
-            letterSpacing: "-0.02em",
-            textAlign: "center",
-            lineHeight: 1.2,
-          }}
-        >
-          {title}
-        </span>
+        {title.split("\n").map((line, i) => (
+          <span
+            key={i}
+            style={{
+              fontSize: 72,
+              fontFamily: "Geist",
+              fontWeight: 400,
+              color: "white",
+              letterSpacing: "-0.02em",
+              textAlign: "center",
+              lineHeight: 1.2,
+            }}
+          >
+            {line}
+          </span>
+        ))}
       </div>
     </div>,
     {

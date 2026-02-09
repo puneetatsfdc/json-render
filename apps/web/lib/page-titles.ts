@@ -7,7 +7,7 @@
  */
 export const PAGE_TITLES: Record<string, string> = {
   // Home (no slug)
-  "": "AI-generated UI with guardrails",
+  "": "The framework for\nUser-Generated Interfaces",
 
   // Top-level
   playground: "Playground",

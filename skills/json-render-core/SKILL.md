@@ -81,8 +81,8 @@ const finalSpec = compiler.getResult();
 
 Any prop value can be a dynamic expression resolved at render time:
 
-- **`{ "$path": "/state/key" }`** -- reads a value from the state model
-- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** -- evaluates a visibility condition and picks a branch
+- **`{ "$path": "/state/key" }`** - reads a value from the state model
+- **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - evaluates a visibility condition and picks a branch
 
 `$cond` uses the same syntax as visibility conditions (`eq`, `neq`, `path`, `and`, `or`, `not`). `$then` and `$else` can themselves be expressions (recursive).
 
