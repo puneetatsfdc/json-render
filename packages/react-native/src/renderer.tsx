@@ -11,10 +11,16 @@ import type {
   ActionBinding,
   Catalog,
   SchemaDefinition,
-  LegacyCatalog,
-  ComponentDefinition,
 } from "@json-render/core";
-import { resolveElementProps, getByPath } from "@json-render/core";
+import {
+  resolveElementProps,
+  resolveBindings,
+  resolveActionParam,
+  evaluateVisibility,
+  getByPath,
+  type PropResolutionContext,
+  type VisibilityContext as CoreVisibilityContext,
+} from "@json-render/core";
 import type {
   Components,
   Actions,
@@ -31,11 +37,7 @@ import { ActionProvider } from "./contexts/actions";
 import { ValidationProvider } from "./contexts/validation";
 import { ConfirmDialog } from "./contexts/actions";
 import { standardComponents } from "./components/standard";
-import {
-  RepeatScopeProvider,
-  useRepeatScope,
-  rewriteRepeatTokens,
-} from "./contexts/repeat-scope";
+import { RepeatScopeProvider, useRepeatScope } from "./contexts/repeat-scope";
 
 /**
  * Props passed to component renderers
@@ -45,8 +47,14 @@ export interface ComponentRenderProps<P = Record<string, unknown>> {
   element: UIElement<string, P>;
   /** Rendered children */
   children?: ReactNode;
-  /** Emit a named event. The renderer resolves the event to action binding(s) from the element's `on` field. */
-  emit?: (event: string) => void;
+  /** Emit a named event. The renderer resolves the event to action binding(s) from the element's `on` field. Always provided by the renderer. */
+  emit: (event: string) => void;
+  /**
+   * Two-way binding paths resolved from `$bindState` / `$bindItem` expressions.
+   * Maps prop name → absolute state path for write-back.
+   * Only present when at least one prop uses `{ $bindState: "..." }` or `{ $bindItem: "..." }`.
+   */
+  bindings?: Record<string, string>;
   /** Whether the parent is loading */
   loading?: boolean;
 }
@@ -127,80 +135,72 @@ class ElementErrorBoundary extends React.Component<
   }
 }
 
-/**
- * Element renderer component
- */
-function ElementRenderer({
-  element,
-  spec,
-  registry,
-  loading,
-  fallback,
-}: {
+interface ElementRendererProps {
   element: UIElement;
   spec: Spec;
   registry: ComponentRegistry;
   loading?: boolean;
   fallback?: ComponentRenderer;
-}) {
+}
+
+/**
+ * Element renderer component.
+ * Memoized to prevent re-rendering all repeat children when state changes.
+ */
+const ElementRenderer = React.memo(function ElementRenderer({
+  element,
+  spec,
+  registry,
+  loading,
+  fallback,
+}: ElementRendererProps) {
   const repeatScope = useRepeatScope();
   const { ctx } = useVisibility();
   const { execute } = useActions();
 
-  // ---- Rewrite $item / $index tokens when inside a Repeat ----
-  let effectiveElement = element;
-  if (repeatScope) {
-    const rewrittenProps = rewriteRepeatTokens(
-      element.props,
-      repeatScope.basePath,
-      repeatScope.index,
-    );
-    const rewrittenVisible =
-      element.visible !== undefined
-        ? rewriteRepeatTokens(
-            element.visible,
-            repeatScope.basePath,
-            repeatScope.index,
-          )
-        : element.visible;
-    const rewrittenOn =
-      element.on !== undefined
-        ? rewriteRepeatTokens(
-            element.on,
-            repeatScope.basePath,
-            repeatScope.index,
-          )
-        : element.on;
-    if (
-      rewrittenProps !== element.props ||
-      rewrittenVisible !== element.visible ||
-      rewrittenOn !== element.on
-    ) {
-      effectiveElement = {
-        ...element,
-        props: rewrittenProps as Record<string, unknown>,
-        visible: rewrittenVisible as UIElement["visible"],
-        on: rewrittenOn as UIElement["on"],
-      };
-    }
-  }
+  // Build context with repeat scope (used for both visibility and props)
+  const fullCtx: PropResolutionContext = useMemo(
+    () =>
+      repeatScope
+        ? {
+            ...ctx,
+            repeatItem: repeatScope.item,
+            repeatIndex: repeatScope.index,
+            repeatBasePath: repeatScope.basePath,
+          }
+        : ctx,
+    [ctx, repeatScope],
+  );
 
-  // Evaluate visibility (after token rewriting so paths are absolute)
-  const isVisible = useIsVisible(effectiveElement.visible);
+  // Evaluate visibility (now supports $item/$index inside repeat scopes)
+  const isVisible =
+    element.visible === undefined
+      ? true
+      : evaluateVisibility(element.visible, fullCtx);
 
   // Create emit function that resolves events to action bindings.
   // Must be called before any early return to satisfy Rules of Hooks.
-  const onBindings = effectiveElement.on;
+  const onBindings = element.on;
   const emit = useCallback(
     (eventName: string) => {
       const binding = onBindings?.[eventName];
       if (!binding) return;
-      const bindings = Array.isArray(binding) ? binding : [binding];
-      for (const b of bindings) {
-        execute(b);
+      const actionBindings = Array.isArray(binding) ? binding : [binding];
+      for (const b of actionBindings) {
+        if (!b.params) {
+          execute(b);
+          continue;
+        }
+        // Resolve all action params via resolveActionParam which handles
+        // $item (→ absolute state path), $index (→ number), $state, $cond, and literals.
+        const resolved: Record<string, unknown> = {};
+        for (const [key, val] of Object.entries(b.params)) {
+          resolved[key] = resolveActionParam(val, fullCtx);
+        }
+        execute({ ...b, params: resolved });
       }
     },
-    [onBindings, execute],
+    [onBindings, execute, fullCtx],
   );
 
   // Don't render if not visible
@@ -208,15 +208,17 @@ function ElementRenderer({
     return null;
   }
 
-  // Resolve dynamic prop expressions ($path, $cond/$then/$else)
-  const resolvedProps = resolveElementProps(
-    effectiveElement.props as Record<string, unknown>,
-    ctx,
-  );
+  // Resolve $bindState/$bindItem expressions → bindings map (prop name → state path)
+  const rawProps = element.props as Record<string, unknown>;
+  const elementBindings = resolveBindings(rawProps, fullCtx);
+
+  // Resolve dynamic prop expressions ($state, $item, $index, $bindState, $bindItem, $cond/$then/$else)
+  const resolvedProps = resolveElementProps(rawProps, fullCtx);
+
   const resolvedElement =
-    resolvedProps !== effectiveElement.props
-      ? { ...effectiveElement, props: resolvedProps }
-      : effectiveElement;
+    resolvedProps !== element.props
+      ? { ...element, props: resolvedProps }
+      : element;
 
   // Get the component renderer
   const Component = registry[resolvedElement.type] ?? fallback;
@@ -261,12 +263,17 @@ function ElementRenderer({
 
   return (
     <ElementErrorBoundary elementType={resolvedElement.type}>
-      <Component element={resolvedElement} emit={emit} loading={loading}>
+      <Component
+        element={resolvedElement}
+        emit={emit}
+        bindings={elementBindings}
+        loading={loading}
+      >
         {children}
       </Component>
     </ElementErrorBoundary>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // RepeatChildren -- renders child elements once per item in a state array.
@@ -288,24 +295,27 @@ function RepeatChildren({
 }) {
   const { state } = useStateStore();
   const repeat = element.repeat!;
-  const statePath = repeat.path;
+  const statePath = repeat.statePath;
 
   const items = (getByPath(state, statePath) as unknown[] | undefined) ?? [];
 
   return (
     <>
-      {items.map((item, index) => {
+      {items.map((itemValue, index) => {
         // Use a stable key: prefer key field, fall back to index
         const key =
-          repeat.key && typeof item === "object" && item !== null
-            ? String((item as Record<string, unknown>)[repeat.key] ?? index)
+          repeat.key && typeof itemValue === "object" && itemValue !== null
+            ? String(
+                (itemValue as Record<string, unknown>)[repeat.key] ?? index,
+              )
             : String(index);
 
         return (
           <RepeatScopeProvider
             key={key}
-            basePath={`${statePath}/${index}`}
+            item={itemValue}
             index={index}
+            basePath={`${statePath}/${index}`}
           >
             {element.children?.map((childKey) => {
               const childElement = spec.elements[childKey];
@@ -406,10 +416,8 @@ export interface JSONUIProviderProps {
   registry?: ComponentRegistry;
   /** Initial state model */
   initialState?: Record<string, unknown>;
-  /** Auth state */
-  authState?: { isSignedIn: boolean; user?: Record<string, unknown> };
   /** Action handlers */
-  actionHandlers?: Record<
+  handlers?: Record<
     string,
     (params: Record<string, unknown>) => Promise<unknown> | unknown
   >;
@@ -431,21 +439,16 @@ export interface JSONUIProviderProps {
 export function JSONUIProvider({
   registry,
   initialState,
-  authState,
-  actionHandlers,
+  handlers,
   navigate,
   validationFunctions,
   onStateChange,
   children,
 }: JSONUIProviderProps) {
   return (
-    <StateProvider
-      initialState={initialState}
-      authState={authState}
-      onStateChange={onStateChange}
-    >
+    <StateProvider initialState={initialState} onStateChange={onStateChange}>
       <VisibilityProvider>
-        <ActionProvider handlers={actionHandlers} navigate={navigate}>
+        <ActionProvider handlers={handlers} navigate={navigate}>
           <ValidationProvider customFunctions={validationFunctions}>
             {children}
             <ConfirmationDialogManager />
@@ -473,21 +476,6 @@ function ConfirmationDialogManager() {
       onCancel={cancel}
     />
   );
-}
-
-/**
- * Legacy helper to create a renderer component from a catalog
- * @deprecated Use createRenderer with the new catalog API instead
- */
-export function createRendererFromCatalog<
-  C extends LegacyCatalog<Record<string, ComponentDefinition>>,
->(
-  _catalog: C,
-  registry: ComponentRegistry,
-): ComponentType<Omit<RendererProps, "registry">> {
-  return function CatalogRenderer(props: Omit<RendererProps, "registry">) {
-    return <Renderer {...props} registry={registry} />;
-  };
 }
 
 // ============================================================================
@@ -564,12 +552,14 @@ export function defineRegistry<C extends Catalog>(
         element,
         children,
         emit,
+        bindings,
         loading,
       }: ComponentRenderProps) => {
         return (componentFn as DefineRegistryComponentFn)({
           props: element.props,
           children,
           emit,
+          bindings,
           loading,
         });
       };
@@ -624,7 +614,8 @@ export function defineRegistry<C extends Catalog>(
 type DefineRegistryComponentFn = (ctx: {
   props: unknown;
   children?: React.ReactNode;
-  emit?: (event: string) => void;
+  emit: (event: string) => void;
+  bindings?: Record<string, string>;
   loading?: boolean;
 }) => React.ReactNode;
 
@@ -653,8 +644,6 @@ export interface CreateRendererProps {
   onStateChange?: (path: string, value: unknown) => void;
   /** Whether the spec is currently loading/streaming */
   loading?: boolean;
-  /** Auth state for visibility conditions */
-  authState?: { isSignedIn: boolean; user?: Record<string, unknown> };
   /** Fallback component for unknown types */
   fallback?: ComponentRenderer;
 }
@@ -706,29 +695,27 @@ export function createRenderer<
     onAction,
     onStateChange,
     loading,
-    authState,
     fallback,
   }: CreateRendererProps) {
-    // Wrap onAction to match internal API
+    // Wrap onAction with a Proxy so any action name routes to the callback
     const actionHandlers = onAction
-      ? {
-          __default__: (params: Record<string, unknown>) => {
-            const actionName = params.__actionName__ as string;
-            const actionParams = params.__actionParams__ as Record<
-              string,
-              unknown
-            >;
-            return onAction(actionName, actionParams);
+      ? new Proxy(
+          {} as Record<
+            string,
+            (params: Record<string, unknown>) => void | Promise<void>
+          >,
+          {
+            get: (_target, prop: string) => {
+              return (params: Record<string, unknown>) =>
+                onAction(prop, params);
+            },
+            has: () => true,
           },
-        }
+        )
       : undefined;
 
     return (
-      <StateProvider
-        initialState={state}
-        authState={authState}
-        onStateChange={onStateChange}
-      >
+      <StateProvider initialState={state} onStateChange={onStateChange}>
         <VisibilityProvider>
           <ActionProvider handlers={actionHandlers}>
             <ValidationProvider>

@@ -16,6 +16,7 @@ import { CopyButton } from "./copy-button";
 import { Toaster } from "./ui/sonner";
 import { PlaygroundRenderer } from "@/lib/render/renderer";
 import { playgroundCatalog } from "@/lib/render/catalog";
+import { buildCatalogDisplayData } from "@/lib/render/catalog-display";
 
 const SIMULATION_PROMPT = "Create a contact form with name, email, and message";
 
@@ -24,10 +25,54 @@ interface SimulationStage {
   stream: string;
 }
 
+// Shared state & element definitions for the progressive simulation stages.
+const FORM_STATE = { form: { name: "", email: "", message: "" } };
+
+const NAME_INPUT = {
+  type: "Input",
+  props: {
+    label: "Name",
+    name: "name",
+    statePath: "/form/name",
+    checks: [{ type: "required", message: "Name is required" }],
+  },
+} as const;
+
+const EMAIL_INPUT = {
+  type: "Input",
+  props: {
+    label: "Email",
+    name: "email",
+    type: "email",
+    statePath: "/form/email",
+    checks: [
+      { type: "required", message: "Email is required" },
+      { type: "email", message: "Please enter a valid email" },
+    ],
+  },
+} as const;
+
+const MESSAGE_INPUT = {
+  type: "Textarea",
+  props: {
+    label: "Message",
+    name: "message",
+    statePath: "/form/message",
+    checks: [{ type: "required", message: "Message is required" }],
+  },
+} as const;
+
+const SUBMIT_BUTTON = {
+  type: "Button",
+  props: { label: "Send Message", variant: "primary" },
+  on: { press: { action: "formSubmit" } },
+} as const;
+
 const SIMULATION_STAGES: SimulationStage[] = [
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
           type: "Card",
@@ -41,98 +86,72 @@ const SIMULATION_STAGES: SimulationStage[] = [
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name"],
         },
-        name: {
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
+        name: NAME_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":"Contact Us","maxWidth":"md"},"children":["name"]}}',
+      '{"op":"add","path":"/elements/name","value":{"type":"Input","props":{"label":"Name","name":"name","statePath":"/form/name","checks":[{"type":"required","message":"Name is required"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email"],
         },
-        name: {
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/email","value":{"type":"Input","props":{"label":"Email","name":"email"}}}',
+      '{"op":"add","path":"/elements/email","value":{"type":"Input","props":{"label":"Email","name":"email","type":"email","statePath":"/form/email","checks":[{"type":"required","message":"Email is required"},{"type":"email","message":"Please enter a valid email"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email", "message"],
         },
-        name: {
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
-        message: {
-          type: "Textarea",
-          props: { label: "Message", name: "message" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
+        message: MESSAGE_INPUT,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/message","value":{"type":"Textarea","props":{"label":"Message","name":"message"}}}',
+      '{"op":"add","path":"/elements/message","value":{"type":"Textarea","props":{"label":"Message","name":"message","statePath":"/form/message","checks":[{"type":"required","message":"Message is required"}]}}}',
   },
   {
     tree: {
       root: "card",
+      state: FORM_STATE,
       elements: {
         card: {
           type: "Card",
           props: { title: "Contact Us", maxWidth: "md" },
           children: ["name", "email", "message", "submit"],
         },
-        name: {
-          type: "Input",
-          props: { label: "Name", name: "name" },
-        },
-        email: {
-          type: "Input",
-          props: { label: "Email", name: "email" },
-        },
-        message: {
-          type: "Textarea",
-          props: { label: "Message", name: "message" },
-        },
-        submit: {
-          type: "Button",
-          props: { label: "Send Message", variant: "primary" },
-        },
+        name: NAME_INPUT,
+        email: EMAIL_INPUT,
+        message: MESSAGE_INPUT,
+        submit: SUBMIT_BUTTON,
       },
     },
     stream:
-      '{"op":"add","path":"/elements/submit","value":{"type":"Button","props":{"label":"Send Message","variant":"primary"}}}',
+      '{"op":"add","path":"/elements/submit","value":{"type":"Button","props":{"label":"Send Message","variant":"primary"},"on":{"press":{"action":"formSubmit"}}}}',
   },
 ];
 
@@ -230,87 +249,10 @@ export function Demo({
   >("components");
 
   // Catalog data for the catalog tab
-  const catalogData = useMemo(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = playgroundCatalog.data as any;
-
-    function extractFields(zodObj: unknown): { name: string; type: string }[] {
-      if (!zodObj) return [];
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const obj = zodObj as any;
-        const shape =
-          typeof obj.shape === "object"
-            ? obj.shape
-            : typeof obj._def?.shape === "function"
-              ? obj._def.shape()
-              : typeof obj._def?.shape === "object"
-                ? obj._def.shape
-                : null;
-        if (!shape) return [];
-
-        return Object.entries(shape).map(([name, schema]) => {
-          let type = "unknown";
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const s = schema as any;
-            const typeName: string =
-              s?._zod?.def?.type ?? s?._def?.typeName ?? "";
-            if (typeName.includes("string")) type = "string";
-            else if (typeName.includes("number")) type = "number";
-            else if (typeName.includes("boolean")) type = "boolean";
-            else if (typeName.includes("array")) type = "array";
-            else if (typeName.includes("enum")) {
-              const values = s?._zod?.def?.values ?? s?._def?.values;
-              type = Array.isArray(values) ? values.join(" | ") : "enum";
-            } else if (typeName.includes("union")) type = "union";
-            else if (typeName.includes("nullable")) {
-              const inner = s?._zod?.def?.innerType ?? s?._def?.innerType;
-              const innerName: string =
-                inner?._zod?.def?.type ?? inner?._def?.typeName ?? "";
-              if (innerName.includes("string")) type = "string?";
-              else if (innerName.includes("number")) type = "number?";
-              else if (innerName.includes("boolean")) type = "boolean?";
-              else if (innerName.includes("array")) type = "array?";
-              else if (innerName.includes("enum")) {
-                const values = inner?._zod?.def?.values ?? inner?._def?.values;
-                type = Array.isArray(values)
-                  ? `(${values.join(" | ")})?`
-                  : "enum?";
-              } else type = "optional";
-            }
-          } catch {
-            // ignore
-          }
-          return { name, type };
-        });
-      } catch {
-        return [];
-      }
-    }
-
-    const components = Object.entries(raw.components ?? {})
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(([name, def]: [string, any]) => ({
-        name,
-        description: (def.description as string) ?? "",
-        props: extractFields(def.props),
-        slots: (def.slots as string[]) ?? [],
-        events: (def.events as string[]) ?? [],
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const actions = Object.entries(raw.actions ?? {})
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(([name, def]: [string, any]) => ({
-        name,
-        description: (def.description as string) ?? "",
-        params: extractFields(def.params),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    return { components, actions };
-  }, []);
+  const catalogData = useMemo(
+    () => buildCatalogDisplayData(playgroundCatalog.data),
+    [],
+  );
 
   // Disable body scroll when any modal is open
   useEffect(() => {

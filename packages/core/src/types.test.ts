@@ -6,9 +6,15 @@ import {
   addByPath,
   removeByPath,
   applySpecStreamPatch,
+  applySpecPatch,
+  nestedToFlat,
   compileSpecStream,
   createSpecStreamCompiler,
+  createMixedStreamParser,
+  createJsonRenderTransform,
+  SPEC_DATA_PART_TYPE,
 } from "./types";
+import type { Spec, SpecStreamLine, StreamChunk } from "./types";
 
 describe("getByPath", () => {
   it("gets nested values with JSON pointer paths", () => {
@@ -110,16 +116,16 @@ describe("resolveDynamicValue", () => {
     expect(resolveDynamicValue(false, {})).toBe(false);
   });
 
-  it("resolves path references", () => {
+  it("resolves $state references", () => {
     const data = { user: { name: "Alice" } };
 
-    expect(resolveDynamicValue({ path: "/user/name" }, data)).toBe("Alice");
+    expect(resolveDynamicValue({ $state: "/user/name" }, data)).toBe("Alice");
   });
 
-  it("returns undefined for missing path references", () => {
+  it("returns undefined for missing $state references", () => {
     const data = { user: { name: "Alice" } };
 
-    expect(resolveDynamicValue({ path: "/missing" }, data)).toBeUndefined();
+    expect(resolveDynamicValue({ $state: "/missing" }, data)).toBeUndefined();
   });
 
   it("returns undefined for null value", () => {
@@ -555,5 +561,509 @@ describe("createSpecStreamCompiler", () => {
     compiler.push('{"op":"remove","path":"/y"}\n');
     const result = compiler.getResult();
     expect(result).toEqual({ z: 1, w: 2 });
+  });
+});
+
+// =============================================================================
+// applySpecPatch
+// =============================================================================
+
+describe("applySpecPatch", () => {
+  it("sets the root element", () => {
+    const spec: Spec = { root: "", elements: {} };
+    applySpecPatch(spec, { op: "add", path: "/root", value: "main" });
+    expect(spec.root).toBe("main");
+  });
+
+  it("adds an element to the elements map", () => {
+    const spec: Spec = { root: "main", elements: {} };
+    applySpecPatch(spec, {
+      op: "add",
+      path: "/elements/main",
+      value: { type: "Card", props: { title: "Hello" }, children: [] },
+    });
+    expect(spec.elements.main).toEqual({
+      type: "Card",
+      props: { title: "Hello" },
+      children: [],
+    });
+  });
+
+  it("replaces an existing element", () => {
+    const spec: Spec = {
+      root: "main",
+      elements: {
+        main: { type: "Card", props: { title: "Old" }, children: [] },
+      },
+    };
+    applySpecPatch(spec, {
+      op: "replace",
+      path: "/elements/main/props/title",
+      value: "New",
+    });
+    expect(spec.elements.main!.props.title).toBe("New");
+  });
+
+  it("removes an element", () => {
+    const spec: Spec = {
+      root: "main",
+      elements: {
+        main: { type: "Card", props: {}, children: [] },
+        child: { type: "Text", props: {}, children: [] },
+      },
+    };
+    applySpecPatch(spec, { op: "remove", path: "/elements/child" });
+    expect(spec.elements.child).toBeUndefined();
+    expect(spec.elements.main).toBeDefined();
+  });
+
+  it("adds state data", () => {
+    const spec: Spec = { root: "main", elements: {} };
+    applySpecPatch(spec, {
+      op: "add",
+      path: "/state",
+      value: { count: 0 },
+    });
+    expect(spec.state).toEqual({ count: 0 });
+  });
+
+  it("returns the mutated spec", () => {
+    const spec: Spec = { root: "", elements: {} };
+    const result = applySpecPatch(spec, {
+      op: "add",
+      path: "/root",
+      value: "main",
+    });
+    expect(result).toBe(spec);
+  });
+});
+
+// =============================================================================
+// createMixedStreamParser
+// =============================================================================
+
+describe("createMixedStreamParser", () => {
+  it("classifies JSONL lines as patches", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push('{"op":"add","path":"/root","value":"main"}\n');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.op).toBe("add");
+    expect(patches[0]!.path).toBe("/root");
+    expect(texts).toHaveLength(0);
+  });
+
+  it("classifies non-JSONL lines as text", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push("Hello, here is your UI:\n");
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toBe("Hello, here is your UI:");
+    expect(patches).toHaveLength(0);
+  });
+
+  it("handles mixed text and JSONL", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push(
+      'Here is the dashboard:\n{"op":"add","path":"/root","value":"dash"}\n',
+    );
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toBe("Here is the dashboard:");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.path).toBe("/root");
+  });
+
+  it("buffers partial lines across chunks", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push('{"op":"add","path":"/ro');
+    expect(patches).toHaveLength(0);
+
+    parser.push('ot","value":"main"}\n');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.path).toBe("/root");
+  });
+
+  it("flushes remaining buffer on flush()", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    // No trailing newline — stuck in buffer
+    parser.push('{"op":"add","path":"/root","value":"main"}');
+    expect(patches).toHaveLength(0);
+
+    parser.flush();
+    expect(patches).toHaveLength(1);
+  });
+
+  it("flushes text buffer on flush()", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push("Some trailing text");
+    expect(texts).toHaveLength(0);
+
+    parser.flush();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toBe("Some trailing text");
+  });
+
+  it("skips empty lines", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push("\n\n\n");
+    expect(patches).toHaveLength(0);
+    expect(texts).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// nestedToFlat
+// =============================================================================
+
+describe("nestedToFlat", () => {
+  it("converts a single node with no children", () => {
+    const spec = nestedToFlat({
+      type: "Text",
+      props: { content: "Hello" },
+    });
+    expect(spec.root).toBe("el-0");
+    expect(spec.elements["el-0"]).toEqual({
+      type: "Text",
+      props: { content: "Hello" },
+      children: [],
+    });
+  });
+
+  it("converts a tree with children", () => {
+    const spec = nestedToFlat({
+      type: "Card",
+      props: { title: "Hello" },
+      children: [
+        { type: "Text", props: { content: "World" }, children: [] },
+        { type: "Button", props: { label: "Click" } },
+      ],
+    });
+
+    expect(spec.root).toBe("el-0");
+    expect(Object.keys(spec.elements)).toHaveLength(3);
+    expect(spec.elements["el-0"]!.type).toBe("Card");
+    expect(spec.elements["el-0"]!.children).toEqual(["el-1", "el-2"]);
+    expect(spec.elements["el-1"]!.type).toBe("Text");
+    expect(spec.elements["el-1"]!.children).toEqual([]);
+    expect(spec.elements["el-2"]!.type).toBe("Button");
+    expect(spec.elements["el-2"]!.children).toEqual([]);
+  });
+
+  it("hoists state from root node", () => {
+    const spec = nestedToFlat({
+      type: "Card",
+      props: { title: "Hello" },
+      children: [],
+      state: { count: 0, items: [] },
+    });
+
+    expect(spec.state).toEqual({ count: 0, items: [] });
+    // state should not appear as a field on the element
+    expect(
+      (spec.elements["el-0"] as Record<string, unknown>).state,
+    ).toBeUndefined();
+  });
+
+  it("preserves extra fields like visible and on", () => {
+    const spec = nestedToFlat({
+      type: "Panel",
+      props: {},
+      visible: { $state: "/showPanel" },
+      on: {
+        press: { action: "setState", params: { statePath: "/x", value: 1 } },
+      },
+      children: [],
+    });
+
+    const el = spec.elements["el-0"] as Record<string, unknown>;
+    expect(el.visible).toEqual({ $state: "/showPanel" });
+    expect(el.on).toEqual({
+      press: { action: "setState", params: { statePath: "/x", value: 1 } },
+    });
+  });
+
+  it("handles deeply nested trees", () => {
+    const spec = nestedToFlat({
+      type: "A",
+      props: {},
+      children: [
+        {
+          type: "B",
+          props: {},
+          children: [
+            {
+              type: "C",
+              props: {},
+              children: [{ type: "D", props: {} }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(Object.keys(spec.elements)).toHaveLength(4);
+    expect(spec.elements["el-0"]!.children).toEqual(["el-1"]);
+    expect(spec.elements["el-1"]!.children).toEqual(["el-2"]);
+    expect(spec.elements["el-2"]!.children).toEqual(["el-3"]);
+    expect(spec.elements["el-3"]!.children).toEqual([]);
+  });
+
+  it("returns empty elements for empty children array", () => {
+    const spec = nestedToFlat({
+      type: "Empty",
+      props: {},
+      children: [],
+    });
+
+    expect(Object.keys(spec.elements)).toHaveLength(1);
+    expect(spec.elements["el-0"]!.children).toEqual([]);
+  });
+
+  it("does not hoist state from non-root nodes", () => {
+    const spec = nestedToFlat({
+      type: "Root",
+      props: {},
+      children: [{ type: "Child", props: {}, state: { shouldNotHoist: true } }],
+    });
+
+    // Only root state hoists to spec.state
+    expect(spec.state).toBeUndefined();
+    // The child's state is not a standard field, so it should not leak
+    expect(
+      (spec.elements["el-1"] as Record<string, unknown>).state,
+    ).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// createJsonRenderTransform
+// =============================================================================
+
+describe("createJsonRenderTransform", () => {
+  /** Helper: push text-delta chunks through the transform and collect output */
+  async function transformText(text: string): Promise<StreamChunk[]> {
+    const transform = createJsonRenderTransform();
+    const writer = transform.writable.getWriter();
+    const reader = transform.readable.getReader();
+
+    const chunks: StreamChunk[] = [];
+
+    // Read and write concurrently to avoid backpressure deadlock
+    const readAll = (async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    })();
+
+    await writer.write({ type: "text-start", id: "t1" });
+    await writer.write({ type: "text-delta", id: "t1", delta: text });
+    await writer.write({ type: "text-end", id: "t1" });
+    await writer.close();
+
+    await readAll;
+    return chunks;
+  }
+
+  it("passes prose text through as text-delta", async () => {
+    const chunks = await transformText("Hello world\n");
+    const textChunks = chunks.filter((c) => c.type === "text-delta");
+    const text = textChunks.map((c) => (c as { delta: string }).delta).join("");
+    expect(text).toContain("Hello world");
+  });
+
+  it("classifies valid JSONL patches as data-spec (heuristic mode)", async () => {
+    const patch = '{"op":"add","path":"/root","value":"main"}\n';
+    const chunks = await transformText(patch);
+    const specChunks = chunks.filter((c) => c.type === SPEC_DATA_PART_TYPE);
+    expect(specChunks.length).toBe(1);
+    expect((specChunks[0] as { data: { type: string } }).data.type).toBe(
+      "patch",
+    );
+  });
+
+  it("lines starting with { that are NOT patches are flushed as text", async () => {
+    const line = '{"not":"a patch"}\n';
+    const chunks = await transformText(line);
+    const specChunks = chunks.filter((c) => c.type === SPEC_DATA_PART_TYPE);
+    const textChunks = chunks.filter((c) => c.type === "text-delta");
+    expect(specChunks.length).toBe(0);
+    const text = textChunks.map((c) => (c as { delta: string }).delta).join("");
+    expect(text).toContain('{"not":"a patch"}');
+  });
+
+  it("parses content inside ```spec fence as patches", async () => {
+    const input = [
+      "Here is some UI:\n",
+      "```spec\n",
+      '{"op":"add","path":"/root","value":"main"}\n',
+      '{"op":"add","path":"/elements/main","value":{"type":"Card","props":{},"children":[]}}\n',
+      "```\n",
+      "Done!\n",
+    ].join("");
+
+    const chunks = await transformText(input);
+    const specChunks = chunks.filter((c) => c.type === SPEC_DATA_PART_TYPE);
+    expect(specChunks.length).toBe(2);
+
+    // Prose before and after should come through
+    const textChunks = chunks.filter((c) => c.type === "text-delta");
+    const text = textChunks.map((c) => (c as { delta: string }).delta).join("");
+    expect(text).toContain("Here is some UI:");
+    expect(text).toContain("Done!");
+    // Fence delimiters should NOT appear in text
+    expect(text).not.toContain("```spec");
+  });
+
+  it("handles mixed text + heuristic patches in single stream", async () => {
+    const input = [
+      "Some text\n",
+      '{"op":"add","path":"/root","value":"r"}\n',
+      "More text\n",
+    ].join("");
+
+    const chunks = await transformText(input);
+    const specChunks = chunks.filter((c) => c.type === SPEC_DATA_PART_TYPE);
+    expect(specChunks.length).toBe(1);
+
+    const textChunks = chunks.filter((c) => c.type === "text-delta");
+    const text = textChunks.map((c) => (c as { delta: string }).delta).join("");
+    expect(text).toContain("Some text");
+    expect(text).toContain("More text");
+  });
+
+  it("non-text chunks pass through unchanged", async () => {
+    const transform = createJsonRenderTransform();
+    const writer = transform.writable.getWriter();
+    const reader = transform.readable.getReader();
+
+    const toolChunk = {
+      type: "tool-call",
+      toolCallId: "abc",
+      toolName: "test",
+    };
+
+    const readPromise = reader.read();
+    await writer.write(toolChunk as StreamChunk);
+    await writer.close();
+
+    const { value } = await readPromise;
+    expect(value).toEqual(toolChunk);
+  });
+
+  it("flush behavior at end of stream", async () => {
+    const transform = createJsonRenderTransform();
+    const writer = transform.writable.getWriter();
+    const reader = transform.readable.getReader();
+
+    const chunks: StreamChunk[] = [];
+    const readAll = (async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    })();
+
+    // Write a text delta with no trailing newline
+    await writer.write({ type: "text-start", id: "t1" });
+    await writer.write({
+      type: "text-delta",
+      id: "t1",
+      delta: '{"op":"add","path":"/root","value":"main"}',
+    });
+    await writer.write({ type: "text-end", id: "t1" });
+    await writer.close();
+
+    await readAll;
+
+    // The buffered patch should be flushed on text-end
+    const specChunks = chunks.filter((c) => c.type === SPEC_DATA_PART_TYPE);
+    expect(specChunks.length).toBe(1);
+  });
+});
+
+// =============================================================================
+// createMixedStreamParser - fence mode
+// =============================================================================
+
+describe("createMixedStreamParser - fence mode", () => {
+  it("parses patches inside ```spec fence", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push("Hello\n");
+    parser.push("```spec\n");
+    parser.push('{"op":"add","path":"/root","value":"main"}\n');
+    parser.push("```\n");
+    parser.push("Goodbye\n");
+    parser.flush();
+
+    expect(patches.length).toBe(1);
+    expect(patches[0].op).toBe("add");
+    expect(texts).toContain("Hello");
+    expect(texts).toContain("Goodbye");
+  });
+
+  it("fence delimiters are not emitted as text or patches", () => {
+    const patches: SpecStreamLine[] = [];
+    const texts: string[] = [];
+    const parser = createMixedStreamParser({
+      onPatch: (p) => patches.push(p),
+      onText: (t) => texts.push(t),
+    });
+
+    parser.push("```spec\n");
+    parser.push('{"op":"add","path":"/root","value":"r"}\n');
+    parser.push("```\n");
+    parser.flush();
+
+    expect(patches.length).toBe(1);
+    expect(texts.length).toBe(0);
   });
 });

@@ -1,15 +1,15 @@
 import { z } from "zod";
-import type { DynamicValue, StateModel, LogicExpression } from "./types";
+import type { DynamicValue, StateModel, VisibilityCondition } from "./types";
 import { DynamicValueSchema, resolveDynamicValue } from "./types";
-import { LogicExpressionSchema, evaluateLogicExpression } from "./visibility";
+import { VisibilityConditionSchema, evaluateVisibility } from "./visibility";
 
 /**
  * Validation check definition
  */
 export interface ValidationCheck {
-  /** Function name (built-in or from catalog) */
-  fn: string;
-  /** Additional arguments for the function */
+  /** Validation type (built-in or from catalog) */
+  type: string;
+  /** Additional arguments for the validation */
   args?: Record<string, DynamicValue>;
   /** Error message to display if check fails */
   message: string;
@@ -24,14 +24,14 @@ export interface ValidationConfig {
   /** When to run validation */
   validateOn?: "change" | "blur" | "submit";
   /** Condition for when validation is enabled */
-  enabled?: LogicExpression;
+  enabled?: VisibilityCondition;
 }
 
 /**
  * Schema for validation check
  */
 export const ValidationCheckSchema = z.object({
-  fn: z.string(),
+  type: z.string(),
   args: z.record(z.string(), DynamicValueSchema).optional(),
   message: z.string(),
 });
@@ -42,7 +42,7 @@ export const ValidationCheckSchema = z.object({
 export const ValidationConfigSchema = z.object({
   checks: z.array(ValidationCheckSchema).optional(),
   validateOn: z.enum(["change", "blur", "submit"]).optional(),
-  enabled: LogicExpressionSchema.optional(),
+  enabled: VisibilityConditionSchema.optional(),
 });
 
 /**
@@ -174,7 +174,7 @@ export const builtInValidationFunctions: Record<string, ValidationFunction> = {
  * Validation result for a single check
  */
 export interface ValidationCheckResult {
-  fn: string;
+  type: string;
   valid: boolean;
   message: string;
 }
@@ -218,22 +218,22 @@ export function runValidationCheck(
   }
 
   // Find the validation function
-  const fn =
-    builtInValidationFunctions[check.fn] ?? customFunctions?.[check.fn];
+  const validationFn =
+    builtInValidationFunctions[check.type] ?? customFunctions?.[check.type];
 
-  if (!fn) {
-    console.warn(`Unknown validation function: ${check.fn}`);
+  if (!validationFn) {
+    console.warn(`Unknown validation function: ${check.type}`);
     return {
-      fn: check.fn,
+      type: check.type,
       valid: true, // Don't fail on unknown functions
       message: check.message,
     };
   }
 
-  const valid = fn(value, resolvedArgs);
+  const valid = validationFn(value, resolvedArgs);
 
   return {
-    fn: check.fn,
+    type: check.type,
     valid,
     message: check.message,
   };
@@ -244,16 +244,15 @@ export function runValidationCheck(
  */
 export function runValidation(
   config: ValidationConfig,
-  ctx: ValidationContext & { authState?: { isSignedIn: boolean } },
+  ctx: ValidationContext,
 ): ValidationResult {
   const checks: ValidationCheckResult[] = [];
   const errors: string[] = [];
 
   // Check if validation is enabled
   if (config.enabled) {
-    const enabled = evaluateLogicExpression(config.enabled, {
+    const enabled = evaluateVisibility(config.enabled, {
       stateModel: ctx.stateModel,
-      authState: ctx.authState,
     });
     if (!enabled) {
       return { valid: true, errors: [], checks: [] };
@@ -283,47 +282,47 @@ export function runValidation(
  */
 export const check = {
   required: (message = "This field is required"): ValidationCheck => ({
-    fn: "required",
+    type: "required",
     message,
   }),
 
   email: (message = "Invalid email address"): ValidationCheck => ({
-    fn: "email",
+    type: "email",
     message,
   }),
 
   minLength: (min: number, message?: string): ValidationCheck => ({
-    fn: "minLength",
+    type: "minLength",
     args: { min },
     message: message ?? `Must be at least ${min} characters`,
   }),
 
   maxLength: (max: number, message?: string): ValidationCheck => ({
-    fn: "maxLength",
+    type: "maxLength",
     args: { max },
     message: message ?? `Must be at most ${max} characters`,
   }),
 
   pattern: (pattern: string, message = "Invalid format"): ValidationCheck => ({
-    fn: "pattern",
+    type: "pattern",
     args: { pattern },
     message,
   }),
 
   min: (min: number, message?: string): ValidationCheck => ({
-    fn: "min",
+    type: "min",
     args: { min },
     message: message ?? `Must be at least ${min}`,
   }),
 
   max: (max: number, message?: string): ValidationCheck => ({
-    fn: "max",
+    type: "max",
     args: { max },
     message: message ?? `Must be at most ${max}`,
   }),
 
   url: (message = "Invalid URL"): ValidationCheck => ({
-    fn: "url",
+    type: "url",
     message,
   }),
 
@@ -331,8 +330,8 @@ export const check = {
     otherPath: string,
     message = "Fields must match",
   ): ValidationCheck => ({
-    fn: "matches",
-    args: { other: { path: otherPath } },
+    type: "matches",
+    args: { other: { $state: otherPath } },
     message,
   }),
 };

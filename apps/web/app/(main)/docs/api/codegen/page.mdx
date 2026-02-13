@@ -13,12 +13,12 @@ Walk the UI spec depth-first.
 ```typescript
 function traverseSpec(
   spec: Spec,
-  visitor: SpecVisitor,
+  visitor: TreeVisitor,
   startKey?: string
 ): void
 
-interface SpecVisitor {
-  (element: UIElement, depth: number, parent: UIElement | null): void;
+interface TreeVisitor {
+  (element: UIElement, key: string, depth: number, parent: UIElement | null): void;
 }
 ```
 
@@ -36,7 +36,7 @@ const components = collectUsedComponents(spec);
 
 ### collectStatePaths
 
-Get all state paths referenced in props (statePath, bindPath, valuePath, etc.).
+Get all state paths referenced in props (statePath, bindPath, etc.).
 
 ```typescript
 function collectStatePaths(spec: Spec): Set<string>
@@ -77,8 +77,8 @@ serializePropValue("hello")
 serializePropValue(42)
 // { value: '42', needsBraces: true }
 
-serializePropValue({ path: 'user/name' })
-// { value: '{ path: "user/name" }', needsBraces: true }
+serializePropValue({ $state: '/user/name' })
+// { value: '{ $state: "/user/name" }', needsBraces: true }
 ```
 
 ### serializeProps

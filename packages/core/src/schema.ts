@@ -107,6 +107,14 @@ export interface PromptOptions {
   system?: string;
   /** Additional rules to append */
   customRules?: string[];
+  /**
+   * Output mode for the generated prompt.
+   *
+   * - `"generate"` (default): The LLM should output only JSONL patches (no prose).
+   * - `"chat"`: The LLM should respond conversationally first, then output JSONL patches.
+   *   Includes rules about interleaving text with JSONL and not wrapping in code fences.
+   */
+  mode?: "generate" | "chat";
 }
 
 /**
@@ -533,6 +541,7 @@ function generatePrompt<TDef extends SchemaDefinition, TCatalog>(
   const {
     system = "You are a UI generator that outputs JSON.",
     customRules = [],
+    mode = "generate",
   } = options;
 
   const lines: string[] = [];
@@ -540,10 +549,29 @@ function generatePrompt<TDef extends SchemaDefinition, TCatalog>(
   lines.push("");
 
   // Output format section - explain JSONL streaming patch format
-  lines.push("OUTPUT FORMAT (JSONL, RFC 6902 JSON Patch):");
-  lines.push(
-    "Output JSONL (one JSON object per line) using RFC 6902 JSON Patch operations to build a UI tree.",
-  );
+  if (mode === "chat") {
+    lines.push("OUTPUT FORMAT (text + JSONL, RFC 6902 JSON Patch):");
+    lines.push(
+      "You respond conversationally. When generating UI, first write a brief explanation (1-3 sentences), then output JSONL patch lines wrapped in a ```spec code fence.",
+    );
+    lines.push(
+      "The JSONL lines use RFC 6902 JSON Patch operations to build a UI tree. Always wrap them in a ```spec fence block:",
+    );
+    lines.push("  ```spec");
+    lines.push('  {"op":"add","path":"/root","value":"main"}');
+    lines.push(
+      '  {"op":"add","path":"/elements/main","value":{"type":"Card","props":{"title":"Hello"},"children":[]}}',
+    );
+    lines.push("  ```");
+    lines.push(
+      "If the user's message does not require a UI (e.g. a greeting or clarifying question), respond with text only — no JSONL.",
+    );
+  } else {
+    lines.push("OUTPUT FORMAT (JSONL, RFC 6902 JSON Patch):");
+    lines.push(
+      "Output JSONL (one JSON object per line) using RFC 6902 JSON Patch operations to build a UI tree.",
+    );
+  }
   lines.push(
     "Each line is a JSON patch operation (add, remove, replace). Start with /root, then stream /elements and /state patches interleaved so the UI fills in progressively as it streams.",
   );
@@ -563,12 +591,12 @@ function generatePrompt<TDef extends SchemaDefinition, TCatalog>(
   const comp1Props = comp1Def ? getExampleProps(comp1Def) : {};
   const comp2Props = comp2Def ? getExampleProps(comp2Def) : {};
 
-  // Find a string prop on comp2 to demonstrate $path dynamic bindings
+  // Find a string prop on comp2 to demonstrate $state dynamic bindings
   const dynamicPropName = comp2Def?.props
     ? findFirstStringProp(comp2Def.props)
     : null;
   const dynamicProps = dynamicPropName
-    ? { ...comp2Props, [dynamicPropName]: { $path: "$item/title" } }
+    ? { ...comp2Props, [dynamicPropName]: { $item: "title" } }
     : comp2Props;
 
   const exampleOutput = [
@@ -593,7 +621,7 @@ function generatePrompt<TDef extends SchemaDefinition, TCatalog>(
       value: {
         type: comp1,
         props: comp1Props,
-        repeat: { path: "/items", key: "id" },
+        repeat: { statePath: "/items", key: "id" },
         children: ["item"],
       },
     }),
@@ -623,10 +651,10 @@ Note: state patches appear right after the elements that use them, so the UI fil
   // Initial state section
   lines.push("INITIAL STATE:");
   lines.push(
-    "Specs include a /state field to seed the state model. Components with statePath read from and write to this state, and $path expressions read from it.",
+    "Specs include a /state field to seed the state model. Components with { $bindState } or { $bindItem } read from and write to this state, and $state expressions read from it.",
   );
   lines.push(
-    "CRITICAL: You MUST include state patches whenever your UI displays data via $path expressions, uses repeat to iterate over arrays, or uses statePath bindings. Without state, $path references resolve to nothing and repeat lists render zero items.",
+    "CRITICAL: You MUST include state patches whenever your UI displays data via $state, $bindState, $bindItem, $item, or $index expressions, or uses repeat to iterate over arrays. Without state, these references resolve to nothing and repeat lists render zero items.",
   );
   lines.push(
     "Output state patches right after the elements that reference them, so the UI fills in progressively as it streams.",
@@ -644,7 +672,7 @@ Note: state patches appear right after the elements that use them, so the UI fil
     '  Initialize the array first if needed: {"op":"add","path":"/state/posts","value":[]}',
   );
   lines.push(
-    'When content comes from the state model, use { "$path": "/some/path" } dynamic props to display it instead of hardcoding the same value in both state and props. The state model is the single source of truth.',
+    'When content comes from the state model, use { "$state": "/some/path" } dynamic props to display it instead of hardcoding the same value in both state and props. The state model is the single source of truth.',
   );
   lines.push(
     "Include realistic sample data in state. For blogs: 3-4 posts with titles, excerpts, authors, dates. For product lists: 3-5 items with names, prices, descriptions. Never leave arrays empty.",
@@ -652,16 +680,16 @@ Note: state patches appear right after the elements that use them, so the UI fil
   lines.push("");
   lines.push("DYNAMIC LISTS (repeat field):");
   lines.push(
-    'Any element can have a top-level "repeat" field to render its children once per item in a state array: { "repeat": { "path": "/arrayPath", "key": "id" } }.',
+    'Any element can have a top-level "repeat" field to render its children once per item in a state array: { "repeat": { "statePath": "/arrayPath", "key": "id" } }.',
   );
   lines.push(
-    'The element itself renders once (as the container), and its children are expanded once per array item. "path" is the state array path. "key" is an optional field name on each item for stable React keys.',
+    'The element itself renders once (as the container), and its children are expanded once per array item. "statePath" is the state array path. "key" is an optional field name on each item for stable React keys.',
   );
   lines.push(
-    `Example: ${JSON.stringify({ type: comp1, props: comp1Props, repeat: { path: "/todos", key: "id" }, children: ["todo-item"] })}`,
+    `Example: ${JSON.stringify({ type: comp1, props: comp1Props, repeat: { statePath: "/todos", key: "id" }, children: ["todo-item"] })}`,
   );
   lines.push(
-    'Inside children of a repeated element, use "$item/field" for per-item paths: statePath:"$item/completed", { "$path": "$item/title" }. Use "$index" for the current array index.',
+    'Inside children of a repeated element, use { "$item": "field" } to read a field from the current item, and { "$index": true } to get the current array index. For two-way binding to an item field use { "$bindItem": "completed" } on the appropriate prop.',
   );
   lines.push(
     "ALWAYS use the repeat field for lists backed by state arrays. NEVER hardcode individual elements for each array item.",
@@ -672,19 +700,19 @@ Note: state patches appear right after the elements that use them, so the UI fil
   lines.push("");
   lines.push("ARRAY STATE ACTIONS:");
   lines.push(
-    'Use action "pushState" to append items to arrays. Params: { path: "/arrayPath", value: { ...item }, clearPath: "/inputPath" }.',
+    'Use action "pushState" to append items to arrays. Params: { statePath: "/arrayPath", value: { ...item }, clearStatePath: "/inputPath" }.',
   );
   lines.push(
-    'Values inside pushState can contain { "path": "/statePath" } references to read current state (e.g. the text from an input field).',
+    'Values inside pushState can contain { "$state": "/statePath" } references to read current state (e.g. the text from an input field).',
   );
   lines.push(
     'Use "$id" inside a pushState value to auto-generate a unique ID.',
   );
   lines.push(
-    'Example: on: { "press": { "action": "pushState", "params": { "path": "/todos", "value": { "id": "$id", "title": { "path": "/newTodoText" }, "completed": false }, "clearPath": "/newTodoText" } } }',
+    'Example: on: { "press": { "action": "pushState", "params": { "statePath": "/todos", "value": { "id": "$id", "title": { "$state": "/newTodoText" }, "completed": false }, "clearStatePath": "/newTodoText" } } }',
   );
   lines.push(
-    'Use action "removeState" to remove items from arrays by index. Params: { path: "/arrayPath", index: N }. Inside a repeated element\'s children, use "$index" for the current item index.',
+    'Use action "removeState" to remove items from arrays by index. Params: { statePath: "/arrayPath", index: N }. Inside a repeated element\'s children, use { "$index": true } for the current item index. Action params support the same expressions as props: { "$item": "field" } resolves to the absolute state path, { "$index": true } resolves to the index number, and { "$state": "/path" } reads a value from state.',
   );
   lines.push(
     "For lists where users can add/remove items (todos, carts, etc.), use pushState and removeState instead of hardcoding with setState.",
@@ -741,11 +769,11 @@ Note: state patches appear right after the elements that use them, so the UI fil
   lines.push("");
   lines.push("Example:");
   lines.push(
-    `  ${JSON.stringify({ type: comp1, props: comp1Props, on: { press: { action: "setState", params: { path: "/saved", value: true } } }, children: [] })}`,
+    `  ${JSON.stringify({ type: comp1, props: comp1Props, on: { press: { action: "setState", params: { statePath: "/saved", value: true } } }, children: [] })}`,
   );
   lines.push("");
   lines.push(
-    'Action params can use dynamic path references to read from state: { "path": "/statePath" }.',
+    'Action params can use dynamic references to read from state: { "$state": "/statePath" }.',
   );
   lines.push(
     "IMPORTANT: Do NOT put action/actionParams inside props. Always use the `on` field for event bindings.",
@@ -755,20 +783,38 @@ Note: state patches appear right after the elements that use them, so the UI fil
   // Visibility conditions
   lines.push("VISIBILITY CONDITIONS:");
   lines.push(
-    "Elements can have an optional `visible` field to conditionally show/hide based on data state. IMPORTANT: `visible` is a top-level field on the element object (sibling of type/props/children), NOT inside props.",
+    "Elements can have an optional `visible` field to conditionally show/hide based on state. IMPORTANT: `visible` is a top-level field on the element object (sibling of type/props/children), NOT inside props.",
   );
   lines.push(
-    `Correct: ${JSON.stringify({ type: comp1, props: comp1Props, visible: { eq: [{ path: "/tab" }, "home"] }, children: ["..."] })}`,
+    `Correct: ${JSON.stringify({ type: comp1, props: comp1Props, visible: { $state: "/activeTab", eq: "home" }, children: ["..."] })}`,
   );
   lines.push(
-    '- `{ "eq": [{ "path": "/statePath" }, "value"] }` - visible when state at path equals value',
+    '- `{ "$state": "/path" }` - visible when state at path is truthy',
   );
   lines.push(
-    '- `{ "neq": [{ "path": "/statePath" }, "value"] }` - visible when state at path does not equal value',
+    '- `{ "$state": "/path", "not": true }` - visible when state at path is falsy',
   );
-  lines.push('- `{ "path": "/statePath" }` - visible when path is truthy');
   lines.push(
-    '- `{ "and": [...] }`, `{ "or": [...] }`, `{ "not": {...} }` - combine conditions',
+    '- `{ "$state": "/path", "eq": "value" }` - visible when state equals value',
+  );
+  lines.push(
+    '- `{ "$state": "/path", "neq": "value" }` - visible when state does not equal value',
+  );
+  lines.push(
+    '- `{ "$state": "/path", "gt": N }` / `gte` / `lt` / `lte` - numeric comparisons',
+  );
+  lines.push(
+    "- Use ONE operator per condition (eq, neq, gt, gte, lt, lte). Do not combine multiple operators.",
+  );
+  lines.push('- Any condition can add `"not": true` to invert its result');
+  lines.push(
+    "- `[condition, condition]` - all conditions must be true (implicit AND)",
+  );
+  lines.push(
+    '- `{ "$and": [condition, condition] }` - explicit AND (use when nesting inside $or)',
+  );
+  lines.push(
+    '- `{ "$or": [condition, condition] }` - at least one must be true (OR)',
   );
   lines.push("- `true` / `false` - always visible/hidden");
   lines.push("");
@@ -776,49 +822,118 @@ Note: state patches appear right after the elements that use them, so the UI fil
     "Use a component with on.press bound to setState to update state and drive visibility.",
   );
   lines.push(
-    `Example: A ${comp1} with on: { "press": { "action": "setState", "params": { "path": "/activeTab", "value": "home" } } } sets state, then a container with visible: { "eq": [{ "path": "/activeTab" }, "home"] } shows only when that tab is active.`,
+    `Example: A ${comp1} with on: { "press": { "action": "setState", "params": { "statePath": "/activeTab", "value": "home" } } } sets state, then a container with visible: { "$state": "/activeTab", "eq": "home" } shows only when that tab is active.`,
+  );
+  lines.push("");
+  lines.push(
+    'For tab patterns where the first/default tab should be visible when no tab is selected yet, use $or to handle both cases: visible: { "$or": [{ "$state": "/activeTab", "eq": "home" }, { "$state": "/activeTab", "not": true }] }. This ensures the first tab is visible both when explicitly selected AND when /activeTab is not yet set.',
   );
   lines.push("");
 
   // Dynamic prop expressions
   lines.push("DYNAMIC PROPS:");
   lines.push(
-    "Any prop value can be a dynamic expression that resolves based on state. Two forms are supported:",
+    "Any prop value can be a dynamic expression that resolves based on state. Three forms are supported:",
   );
   lines.push("");
   lines.push(
-    '1. State binding: `{ "$path": "/statePath" }` - resolves to the value at that state path.',
+    '1. Read-only state: `{ "$state": "/statePath" }` - resolves to the value at that state path (one-way read).',
   );
   lines.push(
-    '   Example: `"color": { "$path": "/theme/primary" }` reads the color from state.',
-  );
-  lines.push("");
-  lines.push(
-    '2. Conditional: `{ "$cond": <condition>, "$then": <value>, "$else": <value> }` - evaluates the condition (same syntax as visibility conditions) and picks the matching value.',
-  );
-  lines.push(
-    '   Example: `"color": { "$cond": { "eq": [{ "path": "/activeTab" }, "home"] }, "$then": "#007AFF", "$else": "#8E8E93" }`',
-  );
-  lines.push(
-    '   Example: `"name": { "$cond": { "eq": [{ "path": "/activeTab" }, "home"] }, "$then": "home", "$else": "home-outline" }`',
+    '   Example: `"color": { "$state": "/theme/primary" }` reads the color from state.',
   );
   lines.push("");
   lines.push(
-    "Use dynamic props instead of duplicating elements with opposing visible conditions when only prop values differ.",
+    '2. Two-way binding: `{ "$bindState": "/statePath" }` - resolves to the value at the state path AND enables write-back. Use on form input props (value, checked, pressed, etc.).',
+  );
+  lines.push(
+    '   Example: `"value": { "$bindState": "/form/email" }` binds the input value to /form/email.',
+  );
+  lines.push(
+    '   Inside repeat scopes: `"checked": { "$bindItem": "completed" }` binds to the current item\'s completed field.',
+  );
+  lines.push("");
+  lines.push(
+    '3. Conditional: `{ "$cond": <condition>, "$then": <value>, "$else": <value> }` - evaluates the condition (same syntax as visibility conditions) and picks the matching value.',
+  );
+  lines.push(
+    '   Example: `"color": { "$cond": { "$state": "/activeTab", "eq": "home" }, "$then": "#007AFF", "$else": "#8E8E93" }`',
+  );
+  lines.push("");
+  lines.push(
+    "Use $bindState for form inputs (text fields, checkboxes, selects, sliders, etc.) and $state for read-only data display. Inside repeat scopes, use $bindItem for form inputs bound to the current item. Use dynamic props instead of duplicating elements with opposing visible conditions when only prop values differ.",
   );
   lines.push("");
 
+  // Validation section — only emit when at least one component has a `checks` prop
+  const hasChecksComponents = allComponents
+    ? Object.entries(allComponents).some(([, def]) => {
+        if (!def.props) return false;
+        const formatted = formatZodType(def.props);
+        return formatted.includes("checks");
+      })
+    : false;
+
+  if (hasChecksComponents) {
+    lines.push("VALIDATION:");
+    lines.push(
+      "Form components that accept a `checks` prop support client-side validation.",
+    );
+    lines.push(
+      'Each check is an object: { "type": "<name>", "message": "...", "args": { ... } }',
+    );
+    lines.push("");
+    lines.push("Built-in validation types:");
+    lines.push("  - required — value must be non-empty");
+    lines.push("  - email — valid email format");
+    lines.push('  - minLength — minimum string length (args: { "min": N })');
+    lines.push('  - maxLength — maximum string length (args: { "max": N })');
+    lines.push('  - pattern — match a regex (args: { "pattern": "regex" })');
+    lines.push('  - min — minimum numeric value (args: { "min": N })');
+    lines.push('  - max — maximum numeric value (args: { "max": N })');
+    lines.push("  - numeric — value must be a number");
+    lines.push("  - url — valid URL format");
+    lines.push(
+      '  - matches — must equal another field (args: { "other": "value" })',
+    );
+    lines.push("");
+    lines.push("Example:");
+    lines.push(
+      '  "checks": [{ "type": "required", "message": "Email is required" }, { "type": "email", "message": "Invalid email" }]',
+    );
+    lines.push("");
+    lines.push(
+      "IMPORTANT: When using checks, the component must also have a { $bindState } or { $bindItem } on its value/checked prop for two-way binding.",
+    );
+    lines.push(
+      "Always include validation checks on form inputs for a good user experience (e.g. required, email, minLength).",
+    );
+    lines.push("");
+  }
+
   // Rules
   lines.push("RULES:");
-  const baseRules = [
-    "Output ONLY JSONL patches - one JSON object per line, no markdown, no code fences",
-    'First set root: {"op":"add","path":"/root","value":"<root-key>"}',
-    'Then add each element: {"op":"add","path":"/elements/<key>","value":{...}}',
-    "Output /state patches right after the elements that use them, one per array item for progressive loading. REQUIRED whenever using $path, repeat, or statePath.",
-    "ONLY use components listed above",
-    "Each element value needs: type, props, children (array of child keys)",
-    "Use unique keys for the element map entries (e.g., 'header', 'metric-1', 'chart-revenue')",
-  ];
+  const baseRules =
+    mode === "chat"
+      ? [
+          "When generating UI, wrap all JSONL patches in a ```spec code fence - one JSON object per line inside the fence",
+          "Write a brief conversational response before any JSONL output",
+          'First set root: {"op":"add","path":"/root","value":"<root-key>"}',
+          'Then add each element: {"op":"add","path":"/elements/<key>","value":{...}}',
+          "Output /state patches right after the elements that use them, one per array item for progressive loading. REQUIRED whenever using $state, $bindState, $bindItem, $item, $index, or repeat.",
+          "ONLY use components listed above",
+          "Each element value needs: type, props, children (array of child keys)",
+          "Use unique keys for the element map entries (e.g., 'header', 'metric-1', 'chart-revenue')",
+        ]
+      : [
+          "Output ONLY JSONL patches - one JSON object per line, no markdown, no code fences",
+          'First set root: {"op":"add","path":"/root","value":"<root-key>"}',
+          'Then add each element: {"op":"add","path":"/elements/<key>","value":{...}}',
+          "Output /state patches right after the elements that use them, one per array item for progressive loading. REQUIRED whenever using $state, $bindState, $bindItem, $item, $index, or repeat.",
+          "ONLY use components listed above",
+          "Each element value needs: type, props, children (array of child keys)",
+          "Use unique keys for the element map entries (e.g., 'header', 'metric-1', 'chart-revenue')",
+        ];
   const schemaRules = catalog.schema.defaultRules ?? [];
   const allRules = [...baseRules, ...schemaRules, ...customRules];
   allRules.forEach((rule, i) => {
@@ -953,7 +1068,7 @@ function generateExampleValue(schema: z.ZodType): unknown {
 
 /**
  * Find the name of the first required string prop in a Zod object schema.
- * Used to demonstrate $path dynamic bindings in examples.
+ * Used to demonstrate $state dynamic bindings in examples.
  */
 function findFirstStringProp(schema?: z.ZodType): string | null {
   if (!schema || !schema._def) return null;

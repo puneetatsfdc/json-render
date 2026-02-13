@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Renderer,
@@ -8,6 +8,8 @@ import {
   StateProvider,
   VisibilityProvider,
   ActionProvider,
+  ValidationProvider,
+  useValidation,
 } from "@json-render/react";
 
 import { registry, Fallback } from "./registry";
@@ -27,27 +29,44 @@ const fallbackRenderer = (renderProps: { element: { type: string } }) => (
 );
 
 /**
- * Action handlers for the playground preview.
- * These are passed to ActionProvider so custom actions (buttonClick, formSubmit,
- * linkClick) work when triggered from the rendered UI.
+ * Inner component that sits inside ValidationProvider so it can call
+ * useValidation() and wire validateAll into the formSubmit action handler.
+ *
+ * ActionProvider stores `handlers` in useState, so it only reads the initial
+ * value. We use a ref so the handlers object is stable (created once) but
+ * formSubmit always reads the latest validateAll.
  */
-const actionHandlers: Record<
-  string,
-  (params: Record<string, unknown>) => void
-> = {
-  buttonClick: (params) => {
-    const message = (params?.message as string) || "Button clicked!";
-    toast.success(message);
-  },
-  formSubmit: (params) => {
-    const formName = (params?.formName as string) || "Form";
-    toast.success(`${formName} submitted successfully!`);
-  },
-  linkClick: (params) => {
-    const href = (params?.href as string) || "#";
-    toast.info(`Navigating to: ${href}`);
-  },
-};
+function ValidatedActions({ children }: { children: ReactNode }) {
+  const { validateAll } = useValidation();
+  const validateAllRef = useRef(validateAll);
+  validateAllRef.current = validateAll;
+
+  const handlers = useMemo<
+    Record<string, (params: Record<string, unknown>) => void>
+  >(
+    () => ({
+      buttonClick: (params) => {
+        const message = (params?.message as string) || "Button clicked!";
+        toast.success(message);
+      },
+      formSubmit: () => {
+        const allValid = validateAllRef.current();
+        if (!allValid) {
+          toast.error("Please fix the errors before submitting.");
+          return;
+        }
+        toast.success("Form submitted successfully!");
+      },
+      linkClick: (params) => {
+        const href = (params?.href as string) || "#";
+        toast.info(`Navigating to: ${href}`);
+      },
+    }),
+    [], // stable — ref ensures latest validateAll is always used
+  );
+
+  return <ActionProvider handlers={handlers}>{children}</ActionProvider>;
+}
 
 export function PlaygroundRenderer({
   spec,
@@ -59,14 +78,16 @@ export function PlaygroundRenderer({
   return (
     <StateProvider initialState={data ?? spec.state}>
       <VisibilityProvider>
-        <ActionProvider handlers={actionHandlers}>
-          <Renderer
-            spec={spec}
-            registry={registry}
-            fallback={fallbackRenderer}
-            loading={loading}
-          />
-        </ActionProvider>
+        <ValidationProvider>
+          <ValidatedActions>
+            <Renderer
+              spec={spec}
+              registry={registry}
+              fallback={fallbackRenderer}
+              loading={loading}
+            />
+          </ValidatedActions>
+        </ValidationProvider>
       </VisibilityProvider>
     </StateProvider>
   );

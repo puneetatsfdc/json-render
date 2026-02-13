@@ -35,10 +35,11 @@ export const catalog = defineCatalog(schema, {
     },
     Input: {
       props: z.object({
+        value: z.union([z.string(), z.record(z.unknown())]).nullable(),
         label: z.string(),
         placeholder: z.string().nullable(),
       }),
-      description: "Text input field",
+      description: "Text input field with optional value binding",
     },
   },
   actions: {
@@ -51,7 +52,7 @@ export const catalog = defineCatalog(schema, {
 ### 2. Define Component Implementations
 
 ```tsx
-import { defineRegistry, useStateStore } from "@json-render/react";
+import { defineRegistry, useBoundProp } from "@json-render/react";
 import { catalog } from "./catalog";
 
 export const { registry } = defineRegistry(catalog, {
@@ -64,19 +65,19 @@ export const { registry } = defineRegistry(catalog, {
       </div>
     ),
     Button: ({ props, emit }) => (
-      <button onClick={() => emit?.("press")}>
+      <button onClick={() => emit("press")}>
         {props.label}
       </button>
     ),
-    Input: ({ props }) => {
-      const { get, set } = useStateStore();
+    Input: ({ props, bindings }) => {
+      const [value, setValue] = useBoundProp(props.value, bindings?.value);
       return (
         <label>
           {props.label}
           <input
             placeholder={props.placeholder ?? ""}
-            value={get("/form/value") ?? ""}
-            onChange={(e) => set("/form/value", e.target.value)}
+            value={value ?? ""}
+            onChange={(e) => setValue(e.target.value)}
           />
         </label>
       );
@@ -93,7 +94,7 @@ import { registry } from "./registry";
 
 function App({ spec }) {
   return (
-    <StateProvider initialState={{ form: { value: "" } }}>
+    <StateProvider initialState={{ form: { name: "" } }}>
       <ActionProvider handlers={{
         submit: () => console.log("Submit"),
       }}>
@@ -106,18 +107,20 @@ function App({ spec }) {
 
 ## Spec Format
 
-The React renderer uses an element tree format:
+The React renderer uses a flat element map format:
 
 ```typescript
 interface Spec {
-  root: Element;
+  root: string;                          // Key of the root element
+  elements: Record<string, UIElement>;   // Flat map of elements by key
+  state?: Record<string, unknown>;       // Optional initial state
 }
 
-interface Element {
-  type: string;           // Component name from catalog
-  props: object;          // Component props
-  children?: Element[];   // Nested elements
-  visible?: VisibilityCondition;
+interface UIElement {
+  type: string;                          // Component name from catalog
+  props: Record<string, unknown>;        // Component props
+  children?: string[];                   // Keys of child elements
+  visible?: VisibilityCondition;         // Visibility condition
 }
 ```
 
@@ -125,19 +128,26 @@ Example spec:
 
 ```json
 {
-  "root": {
-    "type": "Card",
-    "props": { "title": "Welcome" },
-    "children": [
-      {
-        "type": "Input",
-        "props": { "label": "Name", "placeholder": "Enter name" }
-      },
-      {
-        "type": "Button",
-        "props": { "label": "Submit", "action": "submit" }
+  "root": "card-1",
+  "elements": {
+    "card-1": {
+      "type": "Card",
+      "props": { "title": "Welcome" },
+      "children": ["input-1", "btn-1"]
+    },
+    "input-1": {
+      "type": "Input",
+      "props": {
+        "value": { "$bindState": "/form/name" },
+        "label": "Name",
+        "placeholder": "Enter name"
       }
-    ]
+    },
+    "btn-1": {
+      "type": "Button",
+      "props": { "label": "Submit" },
+      "children": []
+    }
   }
 }
 ```
@@ -154,7 +164,7 @@ Share data across components with JSON Pointer paths:
 </StateProvider>
 
 // In components:
-const { data, get, set } = useStateStore();
+const { state, get, set } = useStateStore();
 const name = get("/user/name");  // "John"
 set("/user/age", 25);
 ```
@@ -165,9 +175,9 @@ Handle actions from components:
 
 ```tsx
 <ActionProvider
-  onAction={(action) => {
-    if (action === "submit") handleSubmit();
-    if (action === "cancel") handleCancel();
+  handlers={{
+    submit: (params) => handleSubmit(params),
+    cancel: () => handleCancel(),
   }}
 >
   {children}
@@ -187,7 +197,7 @@ Control element visibility based on data:
 {
   "type": "Alert",
   "props": { "message": "Error!" },
-  "visible": { "path": "/form/hasError" }
+  "visible": { "$state": "/form/hasError" }
 }
 ```
 
@@ -203,8 +213,8 @@ Add field validation:
 // Use validation hooks:
 const { errors, validate } = useFieldValidation("/form/email", {
   checks: [
-    { fn: "required", message: "Email required" },
-    { fn: "email", message: "Invalid email" },
+    { type: "required", message: "Email required" },
+    { type: "email", message: "Invalid email" },
   ],
 });
 ```
@@ -213,11 +223,10 @@ const { errors, validate } = useFieldValidation("/form/email", {
 
 | Hook | Purpose |
 |------|---------|
-| `useStateStore()` | Access data context (`data`, `get`, `set`) |
-| `useStateValue(path)` | Get single value from data |
+| `useStateStore()` | Access state context (`state`, `get`, `set`, `update`) |
+| `useStateValue(path)` | Get single value from state |
 | `useStateBinding(path)` | Two-way data binding (returns `[value, setValue]`) |
-| `useVisibility()` | Access visibility evaluation |
-| `useIsVisible(condition)` | Check if condition is met |
+| `useIsVisible(condition)` | Check if a visibility condition is met |
 | `useActions()` | Access action context |
 | `useAction(name)` | Get a single action dispatch function |
 | `useFieldValidation(path, config)` | Field validation state |
@@ -226,30 +235,42 @@ const { errors, validate } = useFieldValidation("/form/email", {
 ## Visibility Conditions
 
 ```typescript
-// Simple path check (truthy)
-{ "path": "/user/isAdmin" }
+// Truthiness check
+{ "$state": "/user/isAdmin" }
 
-// Auth state
-{ "auth": "signedIn" }
+// Auth state (use state path)
+{ "$state": "/auth/isSignedIn" }
 
-// Comparisons
-{ "eq": [{ "path": "/status" }, "active"] }
-{ "gt": [{ "path": "/count" }, 10] }
+// Comparisons (flat style)
+{ "$state": "/status", "eq": "active" }
+{ "$state": "/count", "gt": 10 }
 
-// Logical operators
-{
-  "and": [
-    { "path": "/feature/enabled" },
-    { "not": { "path": "/maintenance" } }
-  ]
-}
+// Negation
+{ "$state": "/maintenance", "not": true }
 
-{
-  "or": [
-    { "path": "/user/isAdmin" },
-    { "path": "/user/isModerator" }
-  ]
-}
+// Multiple conditions (implicit AND)
+[
+  { "$state": "/feature/enabled" },
+  { "$state": "/maintenance", "not": true }
+]
+
+// Always / never
+true   // always visible
+false  // never visible
+```
+
+TypeScript helpers from `@json-render/core`:
+
+```typescript
+import { visibility } from "@json-render/core";
+
+visibility.when("/path")       // { $state: "/path" }
+visibility.unless("/path")     // { $state: "/path", not: true }
+visibility.eq("/path", val)    // { $state: "/path", eq: val }
+visibility.neq("/path", val)   // { $state: "/path", neq: val }
+visibility.and(cond1, cond2)  // { $and: [cond1, cond2] }
+visibility.always             // true
+visibility.never              // false
 ```
 
 ## Dynamic Prop Expressions
@@ -260,9 +281,9 @@ Any prop value can use data-driven expressions that resolve at render time. The 
 {
   "type": "Badge",
   "props": {
-    "label": { "$path": "/user/role" },
+    "label": { "$state": "/user/role" },
     "color": {
-      "$cond": { "eq": [{ "path": "/user/role" }, "admin"] },
+      "$cond": { "$state": "/user/role", "eq": "admin" },
       "$then": "red",
       "$else": "gray"
     }
@@ -270,20 +291,25 @@ Any prop value can use data-driven expressions that resolve at render time. The 
 }
 ```
 
+For two-way binding, use `{ "$bindState": "/path" }` on the natural value prop (e.g. `value`, `checked`, `pressed`). Inside repeat scopes, use `{ "$bindItem": "field" }` instead. Components receive resolved `bindings` with the state path for each bound prop; use `useBoundProp(props.value, bindings?.value)` to get `[value, setValue]`.
+
 See [@json-render/core](../core/README.md) for full expression syntax.
 
 ## Built-in Actions
 
-The `setState` action is handled automatically by `ActionProvider`. It updates the state model, which triggers re-evaluation of visibility conditions and dynamic prop expressions:
+The `setState`, `pushState`, and `removeState` actions are handled automatically by `ActionProvider`. They update the state model, which triggers re-evaluation of visibility conditions and dynamic prop expressions:
 
 ```json
 {
   "type": "Button",
-  "props": {
-    "label": "Switch Tab",
-    "action": "setState",
-    "actionParams": { "path": "/activeTab", "value": "settings" }
-  }
+  "props": { "label": "Switch Tab" },
+  "on": {
+    "press": {
+      "action": "setState",
+      "params": { "statePath": "/activeTab", "value": "settings" }
+    }
+  },
+  "children": []
 }
 ```
 
@@ -293,12 +319,15 @@ When using `defineRegistry`, components receive these props:
 
 ```typescript
 interface ComponentContext<P> {
-  props: P;                    // Typed props from the catalog
+  props: P;                    // Typed props from the catalog (expressions resolved)
   children?: React.ReactNode;  // Rendered children
   emit?: (event: string) => void;  // Emit a named event
   loading?: boolean;           // Whether the parent is loading
+  bindings?: Record<string, string>;  // State paths for $bindState/$bindItem expressions (e.g. bindings.value)
 }
 ```
+
+Use `bindings?.value`, `bindings?.checked`, etc. with `useBoundProp()` for two-way bound form components.
 
 ## Generate AI Prompts
 
@@ -331,9 +360,13 @@ const { registry } = defineRegistry(catalog, {
 });
 
 const spec = {
-  root: {
-    type: "Greeting",
-    props: { name: "World" },
+  root: "greeting-1",
+  elements: {
+    "greeting-1": {
+      type: "Greeting",
+      props: { name: "World" },
+      children: [],
+    },
   },
 };
 

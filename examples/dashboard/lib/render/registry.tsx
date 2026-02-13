@@ -1,8 +1,8 @@
 "use client";
 
 import { toast } from "sonner";
-import { findFormValue, getByPath } from "@json-render/core";
-import { useStateStore, defineRegistry } from "@json-render/react";
+import { findFormValue } from "@json-render/core";
+import { useBoundProp, defineRegistry } from "@json-render/react";
 import {
   Bar,
   BarChart as RechartsBarChart,
@@ -136,22 +136,25 @@ export const { registry, handlers, executeAction } = defineRegistry(
         <Button
           variant={props.variant ?? "default"}
           disabled={loading || (props.disabled ?? false)}
-          onClick={() => emit?.("press")}
+          onClick={() => emit("press")}
         >
           {loading ? "..." : props.label}
         </Button>
       ),
 
-      Input: ({ props }) => {
-        const { state, set } = useStateStore();
+      Input: ({ props, bindings }) => {
+        const [value, setValue] = useBoundProp<string>(
+          props.value as string | undefined,
+          bindings?.value,
+        );
         return (
           <div className="flex flex-col gap-2">
             {props.label ? <Label>{props.label}</Label> : null}
             <Input
               type={props.type ?? "text"}
-              value={(getByPath(state, props.valuePath) as string) ?? ""}
+              value={value ?? ""}
               placeholder={props.placeholder ?? ""}
-              onChange={(e) => set(props.valuePath, e.target.value)}
+              onChange={(e) => setValue(e.target.value)}
             />
           </div>
         );
@@ -161,7 +164,7 @@ export const { registry, handlers, executeAction } = defineRegistry(
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            emit?.("submit");
+            emit("submit");
           }}
           className="flex flex-col gap-4"
         >
@@ -193,21 +196,23 @@ export const { registry, handlers, executeAction } = defineRegistry(
         </Avatar>
       ),
 
-      Checkbox: ({ props }) => {
-        const { state, set } = useStateStore();
-        const checked =
-          (getByPath(state, props.valuePath) as boolean) ??
-          props.defaultChecked ??
-          false;
+      Checkbox: ({ props, bindings }) => {
+        const [checked, setChecked] = useBoundProp<boolean>(
+          props.checked as boolean | undefined,
+          bindings?.checked,
+        );
+        const isChecked = checked ?? props.defaultChecked ?? false;
         return (
           <div className="flex items-center gap-2">
             <Checkbox
-              id={props.valuePath}
-              checked={checked}
-              onCheckedChange={(value) => set(props.valuePath, value)}
+              id={bindings?.checked ?? "checkbox"}
+              checked={isChecked}
+              onCheckedChange={(value) => setChecked(value === true)}
             />
             {props.label ? (
-              <Label htmlFor={props.valuePath}>{props.label}</Label>
+              <Label htmlFor={bindings?.checked ?? "checkbox"}>
+                {props.label}
+              </Label>
             ) : null}
           </div>
         );
@@ -303,17 +308,14 @@ export const { registry, handlers, executeAction } = defineRegistry(
         <Progress value={props.value} max={props.max ?? 100} />
       ),
 
-      RadioGroup: ({ props }) => {
-        const { state, set } = useStateStore();
-        const value =
-          (getByPath(state, props.valuePath) as string) ??
-          props.defaultValue ??
-          "";
+      RadioGroup: ({ props, bindings }) => {
+        const [value, setValue] = useBoundProp<string>(
+          props.value as string | undefined,
+          bindings?.value,
+        );
+        const current = value ?? props.defaultValue ?? "";
         return (
-          <RadioGroup
-            value={value}
-            onValueChange={(v) => set(props.valuePath, v)}
-          >
+          <RadioGroup value={current} onValueChange={(v) => setValue(v)}>
             {props.options.map((option) => (
               <div key={option.value} className="flex items-center gap-2">
                 <RadioGroupItem value={option.value} id={option.value} />
@@ -324,11 +326,13 @@ export const { registry, handlers, executeAction } = defineRegistry(
         );
       },
 
-      Select: ({ props }) => {
-        const { state, set } = useStateStore();
-        const value = (getByPath(state, props.valuePath) as string) ?? "";
+      Select: ({ props, bindings }) => {
+        const [value, setValue] = useBoundProp<string>(
+          props.value as string | undefined,
+          bindings?.value,
+        );
         return (
-          <Select value={value} onValueChange={(v) => set(props.valuePath, v)}>
+          <Select value={value ?? ""} onValueChange={(v) => setValue(v)}>
             <SelectTrigger>
               <SelectValue placeholder={props.placeholder ?? "Select..."} />
             </SelectTrigger>
@@ -359,21 +363,23 @@ export const { registry, handlers, executeAction } = defineRegistry(
         );
       },
 
-      Switch: ({ props }) => {
-        const { state, set } = useStateStore();
-        const checked =
-          (getByPath(state, props.valuePath) as boolean) ??
-          props.defaultChecked ??
-          false;
+      Switch: ({ props, bindings }) => {
+        const [checked, setChecked] = useBoundProp<boolean>(
+          props.checked as boolean | undefined,
+          bindings?.checked,
+        );
+        const isChecked = checked ?? props.defaultChecked ?? false;
         return (
           <div className="flex items-center gap-2">
             <Switch
-              id={props.valuePath}
-              checked={checked}
-              onCheckedChange={(value) => set(props.valuePath, value)}
+              id={bindings?.checked ?? "switch"}
+              checked={isChecked}
+              onCheckedChange={(value) => setChecked(value)}
             />
             {props.label ? (
-              <Label htmlFor={props.valuePath}>{props.label}</Label>
+              <Label htmlFor={bindings?.checked ?? "switch"}>
+                {props.label}
+              </Label>
             ) : null}
           </div>
         );
@@ -396,16 +402,19 @@ export const { registry, handlers, executeAction } = defineRegistry(
         <TabsContent value={props.value}>{children}</TabsContent>
       ),
 
-      Textarea: ({ props }) => {
-        const { state, set } = useStateStore();
+      Textarea: ({ props, bindings }) => {
+        const [value, setValue] = useBoundProp<string>(
+          props.value as string | undefined,
+          bindings?.value,
+        );
         return (
           <div className="flex flex-col gap-2">
             {props.label ? <Label>{props.label}</Label> : null}
             <Textarea
-              value={(getByPath(state, props.valuePath) as string) ?? ""}
+              value={value ?? ""}
               placeholder={props.placeholder ?? ""}
               rows={props.rows ?? 3}
-              onChange={(e) => set(props.valuePath, e.target.value)}
+              onChange={(e) => setValue(e.target.value)}
             />
           </div>
         );
@@ -430,9 +439,7 @@ export const { registry, handlers, executeAction } = defineRegistry(
       ),
 
       Table: ({ props }) => {
-        const { state } = useStateStore();
-        const path = props.statePath.replace(/\./g, "/");
-        const rawData = getByPath(state, path);
+        const rawData = props.data;
 
         const items: Array<Record<string, unknown>> = Array.isArray(rawData)
           ? rawData
@@ -497,9 +504,7 @@ export const { registry, handlers, executeAction } = defineRegistry(
       },
 
       BarChart: ({ props }) => {
-        const { state } = useStateStore();
-        const path = props.statePath.replace(/\./g, "/");
-        const rawData = getByPath(state, path);
+        const rawData = props.data;
 
         const rawItems: Array<Record<string, unknown>> = Array.isArray(rawData)
           ? rawData
@@ -564,9 +569,7 @@ export const { registry, handlers, executeAction } = defineRegistry(
       },
 
       LineChart: ({ props }) => {
-        const { state } = useStateStore();
-        const path = props.statePath.replace(/\./g, "/");
-        const rawData = getByPath(state, path);
+        const rawData = props.data;
 
         const rawItems: Array<Record<string, unknown>> = Array.isArray(rawData)
           ? rawData

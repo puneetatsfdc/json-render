@@ -252,7 +252,7 @@ export function autoFixSpec(spec: Spec): {
   }
 
   return {
-    spec: { root: spec.root, elements: fixedElements },
+    spec: { root: spec.root, elements: fixedElements, state: spec.state },
     fixes,
   };
 }

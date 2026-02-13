@@ -72,13 +72,13 @@ describe("collectUsedComponents", () => {
 });
 
 describe("collectStatePaths", () => {
-  it("collects paths from valuePath props", () => {
+  it("collects paths from statePath props", () => {
     const spec: Spec = {
       root: "root",
       elements: {
         root: {
           type: "Metric",
-          props: { valuePath: "analytics/revenue" },
+          props: { statePath: "analytics/revenue" },
         },
       },
     };
@@ -93,13 +93,13 @@ describe("collectStatePaths", () => {
       elements: {
         root: {
           type: "Text",
-          props: { content: { path: "user/name" } },
+          props: { content: { $state: "/user/name" } },
         },
       },
     };
 
     const paths = collectStatePaths(spec);
-    expect(paths).toEqual(new Set(["user/name"]));
+    expect(paths).toEqual(new Set(["/user/name"]));
   });
 });
 
@@ -117,5 +117,55 @@ describe("collectActions", () => {
 
     const actions = collectActions(spec);
     expect(actions).toEqual(new Set(["submit_form"]));
+  });
+
+  it("collects actions from on event bindings", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: {},
+          on: { press: { action: "submitForm" } },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["submitForm"]));
+  });
+
+  it("collects actions from on array bindings", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: {},
+          on: {
+            press: [{ action: "save" }, { action: "navigate" }],
+          },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["save", "navigate"]));
+  });
+
+  it("collects actions from both props and on", () => {
+    const spec: Spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Button",
+          props: { action: "submit_form" },
+          on: { press: { action: "setState", params: { statePath: "/x" } } },
+        },
+      },
+    };
+
+    const actions = collectActions(spec);
+    expect(actions).toEqual(new Set(["submit_form", "setState"]));
   });
 });

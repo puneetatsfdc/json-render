@@ -1432,8 +1432,8 @@ export const actionHandlers: Record<
   // Navigation Actions
   // ===========================================================================
   navigate: async (params) => {
-    if (params?.path) {
-      console.log("Navigate to:", params.path);
+    if (params?.statePath) {
+      console.log("Navigate to:", params.statePath);
       // In a real app, this would use the router
     }
   },
@@ -1481,8 +1481,11 @@ export const actionHandlers: Record<
   },
 
   setFormValue: async (params, setState) => {
-    if (params?.path) {
-      setState((prev) => ({ ...prev, [params.path as string]: params?.value }));
+    if (params?.statePath) {
+      setState((prev) => ({
+        ...prev,
+        [params.statePath as string]: params?.value,
+      }));
     }
   },
 

@@ -36,11 +36,11 @@ React Native renderer with standard components, providers, and hooks.
 | Component | Props | Description |
 |-----------|-------|-------------|
 | `Button` | `label`, `variant`, `size`, `disabled`, `action`, `actionParams` | Pressable button |
-| `TextInput` | `placeholder`, `statePath`, `secure`, `keyboardType`, `multiline` | Text input field |
-| `Switch` | `statePath`, `label` | Toggle switch |
-| `Checkbox` | `statePath`, `label` | Checkbox with label |
-| `Slider` | `statePath`, `min`, `max`, `step` | Range slider |
-| `SearchBar` | `placeholder`, `statePath` | Search input |
+| `TextInput` | `placeholder`, `value` (use `$bindState`), `secure`, `keyboardType`, `multiline` | Text input field |
+| `Switch` | `checked` (use `$bindState`), `label` | Toggle switch |
+| `Checkbox` | `checked` (use `$bindState`), `label` | Checkbox with label |
+| `Slider` | `value` (use `$bindState`), `min`, `max`, `step` | Range slider |
+| `SearchBar` | `placeholder`, `value` (use `$bindState`) | Search input |
 
 ### Feedback
 
@@ -82,6 +82,8 @@ React Native renderer with standard components, providers, and hooks.
   {children}
 </VisibilityProvider>
 ```
+
+Conditions in specs use the `VisibilityCondition` format with `$state` paths (e.g. `{ "$state": "/path" }`, `{ "$state": "/path", "eq": value }`). See [visibility](/docs/visibility) for the full syntax.
 
 ### ValidationProvider
 
@@ -135,7 +137,9 @@ const { state, get, set, update } = useStateStore();
 const value = useStateValue(path: string);
 ```
 
-### useStateBinding
+### useStateBinding (deprecated)
+
+> **Deprecated.** Use `useBoundProp` with `$bindState` expressions instead.
 
 ```typescript
 const [value, setValue] = useStateBinding(path: string);

@@ -79,7 +79,7 @@ const { registry } = defineRegistry(catalog, {
       </div>
     ),
     Button: ({ props, emit }) => (
-      <button onClick={() => emit?.("press")}>
+      <button onClick={() => emit("press")}>
         {props.label}
       </button>
     ),
@@ -116,15 +116,21 @@ function Dashboard({ spec }) {
 import { defineRegistry, Renderer } from "@json-render/react";
 import { schema } from "@json-render/react";
 
-// Element tree spec format
+// Flat spec format (root key + elements map)
 const spec = {
-  root: {
-    type: "Card",
-    props: { title: "Hello" },
-    children: [
-      { type: "Button", props: { label: "Click me" } }
-    ]
-  }
+  root: "card-1",
+  elements: {
+    "card-1": {
+      type: "Card",
+      props: { title: "Hello" },
+      children: ["button-1"],
+    },
+    "button-1": {
+      type: "Button",
+      props: { label: "Click me" },
+      children: [],
+    },
+  },
 };
 
 // defineRegistry creates a type-safe component registry
@@ -213,12 +219,10 @@ const systemPrompt = catalog.prompt();
 {
   "type": "Alert",
   "props": { "message": "Error occurred" },
-  "visible": {
-    "and": [
-      { "path": "/form/hasError" },
-      { "not": { "path": "/form/errorDismissed" } }
-    ]
-  }
+  "visible": [
+    { "$state": "/form/hasError" },
+    { "$state": "/form/errorDismissed", "not": true }
+  ]
 }
 ```
 
@@ -230,15 +234,15 @@ Any prop value can be data-driven using expressions:
 {
   "type": "Icon",
   "props": {
-    "name": { "$cond": { "eq": [{ "path": "/activeTab" }, "home"] }, "$then": "home", "$else": "home-outline" },
-    "color": { "$cond": { "eq": [{ "path": "/activeTab" }, "home"] }, "$then": "#007AFF", "$else": "#8E8E93" }
+    "name": { "$cond": { "$state": "/activeTab", "eq": "home" }, "$then": "home", "$else": "home-outline" },
+    "color": { "$cond": { "$state": "/activeTab", "eq": "home" }, "$then": "#007AFF", "$else": "#8E8E93" }
   }
 }
 ```
 
 Two expression forms:
 
-- **`{ "$path": "/state/key" }`** - reads a value from the data model
+- **`{ "$state": "/state/key" }`** - reads a value from the state model
 - **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - evaluates a condition (same syntax as visibility conditions) and picks a branch
 
 ### Actions
@@ -248,7 +252,7 @@ Components can trigger actions, including the built-in `setState` action:
 ```json
 {
   "type": "Pressable",
-  "props": { "action": "setState", "actionParams": { "path": "/activeTab", "value": "home" } },
+  "props": { "action": "setState", "actionParams": { "statePath": "/activeTab", "value": "home" } },
   "children": ["home-icon"]
 }
 ```
@@ -269,6 +273,7 @@ pnpm dev
 - http://localhost:3000 - Docs & Playground
 - http://localhost:3001 - Example Dashboard
 - http://localhost:3002 - Remotion Video Example
+- Chat Example: run `pnpm dev` in `examples/chat`
 - React Native example: run `npx expo start` in `examples/react-native`
 
 ## How It Works

@@ -38,6 +38,7 @@ function DashboardContent() {
     async function loadWidgets() {
       try {
         const res = await fetch("/api/v1/widgets");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setSavedWidgets(data.data || []);
       } catch (err) {
@@ -53,7 +54,7 @@ function DashboardContent() {
   const handleWidgetSaved = useCallback((_id: string) => {
     // Reload saved widgets to get the new one
     fetch("/api/v1/widgets")
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : { data: [] }))
       .then((data) => {
         setSavedWidgets(data.data || []);
         // Remove the new widget slot since it's now saved

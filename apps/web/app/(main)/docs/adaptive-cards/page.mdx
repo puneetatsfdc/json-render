@@ -88,7 +88,8 @@ Adaptive Cards is a JSON-based format for platform-agnostic UI snippets. Cards h
 Define a catalog matching the Adaptive Cards element types:
 
 ```typescript
-import { createCatalog } from '@json-render/core';
+import { defineCatalog } from '@json-render/core';
+import { schema } from '@json-render/react';
 import { z } from 'zod';
 
 // Common Adaptive Cards properties
@@ -108,7 +109,7 @@ const BaseElement = {
   spacing: Spacing.optional(),
 };
 
-export const adaptiveCardsCatalog = createCatalog({
+export const adaptiveCardsCatalog = defineCatalog(schema, {
   components: {
     // Root card
     AdaptiveCard: {

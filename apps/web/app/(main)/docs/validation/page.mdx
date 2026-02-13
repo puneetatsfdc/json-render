@@ -18,15 +18,17 @@ json-render includes common validation functions:
 
 ## Using Validation in JSON
 
+Use `{ "$bindState": "/path" }` on the value prop for two-way binding. Validation checks run against the value at the bound path (available as `bindings?.value` in components):
+
 ```json
 {
   "type": "TextField",
   "props": {
     "label": "Email",
-    "valuePath": "/form/email",
+    "value": { "$bindState": "/form/email" },
     "checks": [
-      { "fn": "required", "message": "Email is required" },
-      { "fn": "email", "message": "Invalid email format" }
+      { "type": "required", "message": "Email is required" },
+      { "type": "email", "message": "Invalid email format" }
     ],
     "validateOn": "blur"
   }
@@ -40,16 +42,16 @@ json-render includes common validation functions:
   "type": "TextField",
   "props": {
     "label": "Password",
-    "valuePath": "/form/password",
+    "value": { "$bindState": "/form/password" },
     "checks": [
-      { "fn": "required", "message": "Password is required" },
+      { "type": "required", "message": "Password is required" },
       { 
-        "fn": "minLength", 
-        "args": { "length": 8 },
+        "type": "minLength", 
+        "args": { "min": 8 },
         "message": "Password must be at least 8 characters"
       },
       {
-        "fn": "pattern",
+        "type": "pattern",
         "args": { "pattern": "[A-Z]" },
         "message": "Must contain at least one uppercase letter"
       }
@@ -60,11 +62,11 @@ json-render includes common validation functions:
 
 ## Custom Validation Functions
 
-Define custom validators in your catalog:
+Define custom validators in your catalog's `functions` field. The catalog itself is framework-agnostic — only the `schema` import varies by platform:
 
 ```typescript
 import { defineCatalog } from '@json-render/core';
-import { schema } from '@json-render/react';
+import { schema } from '@json-render/react'; // or '@json-render/react-native'
 import { z } from 'zod';
 
 const catalog = defineCatalog(schema, {
@@ -80,7 +82,9 @@ const catalog = defineCatalog(schema, {
 });
 ```
 
-Then implement them in your ValidationProvider:
+## Usage with React
+
+In `@json-render/react`, use `ValidationProvider` to supply implementations for your custom validators:
 
 ```tsx
 import { ValidationProvider } from '@json-render/react';
@@ -99,22 +103,25 @@ function App() {
   };
 
   return (
-    <ValidationProvider functions={customValidators}>
+    <ValidationProvider customFunctions={customValidators}>
       {/* Your UI */}
     </ValidationProvider>
   );
 }
 ```
 
-## Using in Components
+### Using in Components
+
+The `useFieldValidation` and `useBoundProp` hooks wire validation into your registry components. Validation uses the path from `bindings?.value` (the bound state path):
 
 ```tsx
-import { useFieldValidation } from '@json-render/react';
+import { useFieldValidation, useBoundProp } from '@json-render/react';
 
-function TextField({ props }) {
-  const { value, setValue, errors, validate } = useFieldValidation(
-    props.valuePath,
-    props.checks
+function TextField({ props, bindings }) {
+  const [value, setValue] = useBoundProp(props.value, bindings?.value);
+  const { errors, isValid, validate, touch, clear } = useFieldValidation(
+    bindings?.value ?? null,
+    { checks: props.checks, validateOn: props.validateOn }
   );
 
   return (
@@ -133,6 +140,8 @@ function TextField({ props }) {
 }
 ```
 
+See the [@json-render/react API reference](/docs/api/react) for full `ValidationProvider` and `useFieldValidation` documentation.
+
 ## Validation Timing
 
 Control when validation runs with `validateOn`:
@@ -143,4 +152,4 @@ Control when validation runs with `validateOn`:
 
 ## Next
 
-Learn about [AI SDK integration](/docs/ai-sdk).
+Learn about [generation modes](/docs/generation-modes).

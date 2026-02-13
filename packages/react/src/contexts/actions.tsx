@@ -32,7 +32,7 @@ function generateUniqueId(): string {
  * Deep-resolve dynamic value references within an object.
  *
  * Supported tokens:
- * - `{ path: "/statePath" }` - read a value from state
+ * - `{ $state: "/statePath" }` - read a value from state
  * - `"$id"` (string) or `{ "$id": true }` - generate a unique ID
  *
  * This allows pushState values to contain references to current state
@@ -53,9 +53,9 @@ function deepResolveValue(
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj);
 
-    // { path: "/foo" } -> read from state (single-key object with "path")
-    if (keys.length === 1 && typeof obj.path === "string") {
-      return get(obj.path as string);
+    // { $state: "/foo" } -> read from state
+    if (keys.length === 1 && typeof obj.$state === "string") {
+      return get(obj.$state as string);
     }
 
     // { "$id": true } -> generate unique ID (single-key object)
@@ -156,27 +156,29 @@ export function ActionProvider({
 
       // Built-in: setState updates the StateProvider state directly
       if (resolved.action === "setState" && resolved.params) {
-        const path = resolved.params.path as string;
+        const statePath = resolved.params.statePath as string;
         const value = resolved.params.value;
-        if (path) {
-          set(path, value);
+        if (statePath) {
+          set(statePath, value);
         }
         return;
       }
 
       // Built-in: pushState appends an item to an array in state.
-      // Supports dynamic values inside the value object via { path: "/..." } syntax.
+      // Supports dynamic values inside the value object via { $state: "/..." } syntax.
       if (resolved.action === "pushState" && resolved.params) {
-        const path = resolved.params.path as string;
+        const statePath = resolved.params.statePath as string;
         const rawValue = resolved.params.value;
-        if (path) {
+        if (statePath) {
           const resolvedValue = deepResolveValue(rawValue, get);
-          const arr = (get(path) as unknown[] | undefined) ?? [];
-          set(path, [...arr, resolvedValue]);
-          // Optionally clear a path after pushing (e.g. clear the input)
-          const clearPath = resolved.params.clearPath as string | undefined;
-          if (clearPath) {
-            set(clearPath, "");
+          const arr = (get(statePath) as unknown[] | undefined) ?? [];
+          set(statePath, [...arr, resolvedValue]);
+          // Optionally clear a state path after pushing (e.g. clear the input)
+          const clearStatePath = resolved.params.clearStatePath as
+            | string
+            | undefined;
+          if (clearStatePath) {
+            set(clearStatePath, "");
           }
         }
         return;
@@ -184,12 +186,12 @@ export function ActionProvider({
 
       // Built-in: removeState removes an item from an array in state by index.
       if (resolved.action === "removeState" && resolved.params) {
-        const path = resolved.params.path as string;
+        const statePath = resolved.params.statePath as string;
         const index = resolved.params.index as number;
-        if (path !== undefined && index !== undefined) {
-          const arr = (get(path) as unknown[] | undefined) ?? [];
+        if (statePath !== undefined && index !== undefined) {
+          const arr = (get(statePath) as unknown[] | undefined) ?? [];
           set(
-            path,
+            statePath,
             arr.filter((_, i) => i !== index),
           );
         }

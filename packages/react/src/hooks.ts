@@ -6,12 +6,17 @@ import type {
   UIElement,
   FlatElement,
   JsonPatch,
+  SpecDataPart,
 } from "@json-render/core";
 import {
   setByPath,
   getByPath,
   addByPath,
   removeByPath,
+  createMixedStreamParser,
+  applySpecPatch,
+  nestedToFlat,
+  SPEC_DATA_PART_TYPE,
 } from "@json-render/core";
 
 /**
@@ -414,4 +419,493 @@ export function flatToTree(elements: FlatElement[]): Spec {
   }
 
   return { root, elements: elementMap };
+}
+
+// =============================================================================
+// useBoundProp — Two-way binding helper for $bindState/$bindItem expressions
+// =============================================================================
+
+/**
+ * Hook for two-way bound props. Returns `[value, setValue]` where:
+ *
+ * - `value` is the already-resolved prop value (passed through from render props)
+ * - `setValue` writes back to the bound state path (no-op if not bound)
+ *
+ * Designed to work with the `bindings` map that the renderer provides when
+ * a prop uses `{ $bindState: "/path" }` or `{ $bindItem: "field" }`.
+ *
+ * @example
+ * ```tsx
+ * import { useBoundProp } from "@json-render/react";
+ *
+ * const Input: ComponentRenderer = ({ props, bindings }) => {
+ *   const [value, setValue] = useBoundProp<string>(props.value, bindings?.value);
+ *   return <input value={value ?? ""} onChange={(e) => setValue(e.target.value)} />;
+ * };
+ * ```
+ */
+export function useBoundProp<T>(
+  propValue: T | undefined,
+  bindingPath: string | undefined,
+): [T | undefined, (value: T) => void] {
+  // Import useStateStore lazily to avoid circular dependency issues.
+  // The hook is always called inside a StateProvider so this is safe.
+  const { set } = useStateStoreFromContext();
+  const setValue = useCallback(
+    (value: T) => {
+      if (bindingPath) set(bindingPath, value);
+    },
+    [bindingPath, set],
+  );
+  return [propValue, setValue];
+}
+
+// Re-export useStateStore access for useBoundProp without circular import
+import { useStateStore as useStateStoreFromContext } from "./contexts/state";
+
+// =============================================================================
+// buildSpecFromParts — Derive Spec from AI SDK data parts
+// =============================================================================
+
+/**
+ * A single part from the AI SDK's `message.parts` array. This is a minimal
+ * structural type so that library helpers do not depend on the AI SDK.
+ * Fields are optional because different part types carry different data:
+ * - Text parts have `text`
+ * - Data parts have `data`
+ */
+export interface DataPart {
+  type: string;
+  text?: string;
+  data?: unknown;
+}
+
+/**
+ * Build a `Spec` by replaying all spec data parts from a message's
+ * parts array. Returns `null` if no spec data parts are present.
+ *
+ * This function is designed to work with the AI SDK's `UIMessage.parts` array.
+ * It picks out parts whose `type` is {@link SPEC_DATA_PART_TYPE} and processes them based
+ * on the payload's `type` discriminator:
+ *
+ * - `"patch"`: Applies the JSON Patch operation incrementally via `applySpecPatch`.
+ * - `"flat"`: Replaces the spec with the complete flat spec.
+ * - `"nested"`: Assigns the nested spec directly (future: nested-to-flat conversion).
+ *
+ * The function has no AI SDK dependency — it operates on a generic array of
+ * `{ type: string; data: unknown }` objects.
+ *
+ * @example
+ * ```tsx
+ * const spec = buildSpecFromParts(message.parts);
+ * if (spec) {
+ *   return <MyRenderer spec={spec} />;
+ * }
+ * ```
+ */
+/**
+ * Type guard that validates a data part payload looks like a valid
+ * {@link SpecDataPart} before we cast it. Returns `false` (and the
+ * part is silently skipped) for malformed payloads.
+ */
+function isSpecDataPart(data: unknown): data is SpecDataPart {
+  if (typeof data !== "object" || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  switch (obj.type) {
+    case "patch":
+      return typeof obj.patch === "object" && obj.patch !== null;
+    case "flat":
+    case "nested":
+      return typeof obj.spec === "object" && obj.spec !== null;
+    default:
+      return false;
+  }
+}
+
+export function buildSpecFromParts(parts: DataPart[]): Spec | null {
+  const spec: Spec = { root: "", elements: {} };
+  let hasSpec = false;
+
+  for (const part of parts) {
+    if (part.type === SPEC_DATA_PART_TYPE) {
+      if (!isSpecDataPart(part.data)) continue;
+      const payload = part.data;
+      if (payload.type === "patch") {
+        hasSpec = true;
+        applySpecPatch(spec, payload.patch);
+      } else if (payload.type === "flat") {
+        hasSpec = true;
+        Object.assign(spec, payload.spec);
+      } else if (payload.type === "nested") {
+        hasSpec = true;
+        const flat = nestedToFlat(payload.spec);
+        Object.assign(spec, flat);
+      }
+    }
+  }
+
+  return hasSpec ? spec : null;
+}
+
+/**
+ * Extract and join all text content from a message's parts array.
+ *
+ * Filters for parts with `type === "text"`, trims each one, and joins them
+ * with double newlines so that text from separate agent steps renders as
+ * distinct paragraphs in markdown.
+ *
+ * Has no AI SDK dependency — operates on a generic `DataPart[]`.
+ *
+ * @example
+ * ```tsx
+ * const text = getTextFromParts(message.parts);
+ * if (text) {
+ *   return <Streamdown>{text}</Streamdown>;
+ * }
+ * ```
+ */
+export function getTextFromParts(parts: DataPart[]): string {
+  return parts
+    .filter(
+      (p): p is DataPart & { text: string } =>
+        p.type === "text" && typeof p.text === "string",
+    )
+    .map((p) => p.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+// =============================================================================
+// useJsonRenderMessage — extract spec + text from message parts
+// =============================================================================
+
+/**
+ * Hook that extracts both the json-render spec and text content from a
+ * message's parts array. Combines `buildSpecFromParts` and `getTextFromParts`
+ * into a single call with memoized results.
+ *
+ * **Memoization behavior:** Results are recomputed only when the `parts` array
+ * reference changes **and** either the length differs or the last element is a
+ * different object. This is optimized for the typical AI SDK streaming pattern
+ * where parts are appended incrementally. Mid-array edits (e.g. replacing an
+ * earlier part without appending) may not trigger recomputation. If you need to
+ * force a recompute after such edits, pass a new array reference with a
+ * different last element.
+ *
+ * @example
+ * ```tsx
+ * import { useJsonRenderMessage } from "@json-render/react";
+ *
+ * function MessageBubble({ message }) {
+ *   const { spec, text, hasSpec } = useJsonRenderMessage(message.parts);
+ *
+ *   return (
+ *     <div>
+ *       {text && <Markdown>{text}</Markdown>}
+ *       {hasSpec && <MyRenderer spec={spec} />}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export function useJsonRenderMessage(parts: DataPart[]) {
+  const prevPartsRef = useRef<DataPart[]>([]);
+  const prevResultRef = useRef<{ spec: Spec | null; text: string }>({
+    spec: null,
+    text: "",
+  });
+
+  // Recompute only when parts actually change (by length + last element identity).
+  // AI SDK typically appends to the parts array during streaming, so checking
+  // length and the last element covers both "new array reference with same
+  // content" (no recompute) and "new part appended" (recompute).
+  const partsChanged =
+    parts !== prevPartsRef.current &&
+    (parts.length !== prevPartsRef.current.length ||
+      parts[parts.length - 1] !==
+        prevPartsRef.current[prevPartsRef.current.length - 1]);
+
+  if (partsChanged || prevPartsRef.current.length === 0) {
+    prevPartsRef.current = parts;
+    prevResultRef.current = {
+      spec: buildSpecFromParts(parts),
+      text: getTextFromParts(parts),
+    };
+  }
+
+  const { spec, text } = prevResultRef.current;
+  const hasSpec = spec !== null && Object.keys(spec.elements || {}).length > 0;
+  return { spec, text, hasSpec };
+}
+
+// =============================================================================
+// useChatUI — Chat + GenUI hook
+// =============================================================================
+
+/**
+ * A single message in the chat, which may contain text, a rendered UI spec, or both.
+ */
+export interface ChatMessage {
+  /** Unique message ID */
+  id: string;
+  /** Who sent this message */
+  role: "user" | "assistant";
+  /** Text content (conversational prose) */
+  text: string;
+  /** json-render Spec built from JSONL patches (null if no UI was generated) */
+  spec: Spec | null;
+}
+
+/**
+ * Options for useChatUI
+ */
+export interface UseChatUIOptions {
+  /** API endpoint that accepts `{ messages: Array<{ role, content }> }` and returns a text stream */
+  api: string;
+  /** Callback when streaming completes for a message */
+  onComplete?: (message: ChatMessage) => void;
+  /** Callback on error */
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Return type for useChatUI
+ */
+export interface UseChatUIReturn {
+  /** All messages in the conversation */
+  messages: ChatMessage[];
+  /** Whether currently streaming an assistant response */
+  isStreaming: boolean;
+  /** Error from the last request, if any */
+  error: Error | null;
+  /** Send a user message */
+  send: (text: string) => Promise<void>;
+  /** Clear all messages and reset the conversation */
+  clear: () => void;
+}
+
+let chatMessageIdCounter = 0;
+function generateChatId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+  chatMessageIdCounter += 1;
+  return `msg-${Date.now()}-${chatMessageIdCounter}`;
+}
+
+/**
+ * Hook for chat + GenUI experiences.
+ *
+ * Manages a multi-turn conversation where each assistant message can contain
+ * both conversational text and a json-render UI spec. The hook sends the full
+ * message history to the API endpoint, reads the streamed response, and
+ * separates text lines from JSONL patch lines using `createMixedStreamParser`.
+ *
+ * @example
+ * ```tsx
+ * const { messages, isStreaming, send, clear } = useChatUI({
+ *   api: "/api/chat",
+ * });
+ *
+ * // Send a message
+ * await send("Compare weather in NYC and Tokyo");
+ *
+ * // Render messages
+ * {messages.map((msg) => (
+ *   <div key={msg.id}>
+ *     {msg.text && <p>{msg.text}</p>}
+ *     {msg.spec && <MyRenderer spec={msg.spec} />}
+ *   </div>
+ * ))}
+ * ```
+ */
+export function useChatUI({
+  api,
+  onComplete,
+  onError,
+}: UseChatUIOptions): UseChatUIReturn {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // Keep a ref to the latest messages so `send` always reads the
+  // current history, avoiding stale closure issues.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  // Keep refs to callbacks so `send` doesn't recreate when consumers
+  // pass inline arrow functions.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
+  const clear = useCallback(() => {
+    setMessages([]);
+    setError(null);
+  }, []);
+
+  const send = useCallback(
+    async (text: string) => {
+      if (!text.trim()) return;
+
+      // Abort any existing request
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
+
+      const userMessage: ChatMessage = {
+        id: generateChatId(),
+        role: "user",
+        text: text.trim(),
+        spec: null,
+      };
+
+      const assistantId = generateChatId();
+      const assistantMessage: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        spec: null,
+      };
+
+      // Append user message and empty assistant placeholder
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setIsStreaming(true);
+      setError(null);
+
+      // Build messages array for the API (full conversation history + new message).
+      // Read from ref to always get the latest messages (avoids stale closure).
+      const historyForApi = [
+        ...messagesRef.current.map((m) => ({
+          role: m.role,
+          content: m.text,
+        })),
+        { role: "user" as const, content: text.trim() },
+      ];
+
+      // Mutable state for accumulating the assistant response
+      let accumulatedText = "";
+      let currentSpec: Spec = { root: "", elements: {} };
+      let hasSpec = false;
+
+      try {
+        const response = await fetch(api, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: historyForApi }),
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (!response.ok) {
+          let errorMessage = `HTTP error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.message) {
+              errorMessage = errorData.message;
+            } else if (errorData.error) {
+              errorMessage = errorData.error;
+            }
+          } catch {
+            // Ignore JSON parsing errors
+          }
+          throw new Error(errorMessage);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response body");
+        }
+
+        const decoder = new TextDecoder();
+
+        // Use createMixedStreamParser to classify lines
+        const parser = createMixedStreamParser({
+          onPatch(patch) {
+            hasSpec = true;
+            applySpecPatch(currentSpec, patch);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      spec: {
+                        root: currentSpec.root,
+                        elements: { ...currentSpec.elements },
+                        ...(currentSpec.state
+                          ? { state: { ...currentSpec.state } }
+                          : {}),
+                      },
+                    }
+                  : m,
+              ),
+            );
+          },
+          onText(line) {
+            accumulatedText += (accumulatedText ? "\n" : "") + line;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, text: accumulatedText } : m,
+              ),
+            );
+          },
+        });
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parser.push(decoder.decode(value, { stream: true }));
+        }
+        parser.flush();
+
+        // Build final message for onComplete callback
+        const finalMessage: ChatMessage = {
+          id: assistantId,
+          role: "assistant",
+          text: accumulatedText,
+          spec: hasSpec
+            ? {
+                root: currentSpec.root,
+                elements: { ...currentSpec.elements },
+                ...(currentSpec.state
+                  ? { state: { ...currentSpec.state } }
+                  : {}),
+              }
+            : null,
+        };
+        onCompleteRef.current?.(finalMessage);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          return;
+        }
+        const resolvedError =
+          err instanceof Error ? err : new Error(String(err));
+        setError(resolvedError);
+        // Remove empty assistant message on error
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== assistantId || m.text.length > 0),
+        );
+        onErrorRef.current?.(resolvedError);
+      } finally {
+        setIsStreaming(false);
+      }
+    },
+    [api],
+  );
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  return {
+    messages,
+    isStreaming,
+    error,
+    send,
+    clear,
+  };
 }

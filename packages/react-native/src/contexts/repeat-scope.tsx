@@ -1,83 +1,38 @@
 import React, { createContext, useContext, type ReactNode } from "react";
 
 /**
- * Repeat scope value provided to child elements inside a Repeat.
+ * Repeat scope value provided to child elements inside a repeated element.
  */
 export interface RepeatScopeValue {
-  /** Absolute state path to the current array item (e.g. "/todos/0") */
-  basePath: string;
+  /** The current array item object */
+  item: unknown;
   /** Index of the current item in the array */
   index: number;
+  /** Absolute state path to the current array item (e.g. "/todos/0") — used for statePath two-way binding */
+  basePath: string;
 }
 
 const RepeatScopeContext = createContext<RepeatScopeValue | null>(null);
 
 /**
- * Provides repeat scope to child elements so $item and $index tokens resolve correctly.
+ * Provides repeat scope to child elements so $item and $index expressions resolve correctly.
  */
 export function RepeatScopeProvider({
-  basePath,
+  item,
   index,
+  basePath,
   children,
 }: RepeatScopeValue & { children: ReactNode }) {
   return (
-    <RepeatScopeContext.Provider value={{ basePath, index }}>
+    <RepeatScopeContext.Provider value={{ item, index, basePath }}>
       {children}
     </RepeatScopeContext.Provider>
   );
 }
 
 /**
- * Read the current repeat scope (or null if not inside a Repeat).
+ * Read the current repeat scope (or null if not inside a repeated element).
  */
 export function useRepeatScope(): RepeatScopeValue | null {
   return useContext(RepeatScopeContext);
-}
-
-// ---------------------------------------------------------------------------
-// Token rewriting helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Recursively rewrite `$item` and `$index` tokens in a value.
- *
- * - `"$item/foo"` → `"{basePath}/foo"`
- * - `"$item"` → `"{basePath}"`
- * - `"$index"` → `index` (number)
- */
-export function rewriteRepeatTokens(
-  value: unknown,
-  basePath: string,
-  index: number,
-): unknown {
-  if (typeof value === "string") {
-    if (value === "$index") return index;
-    if (value === "$item") return basePath;
-    if (value.startsWith("$item/"))
-      return basePath + value.slice("$item".length);
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    let changed = false;
-    const result = value.map((item) => {
-      const rewritten = rewriteRepeatTokens(item, basePath, index);
-      if (rewritten !== item) changed = true;
-      return rewritten;
-    });
-    return changed ? result : value;
-  }
-
-  if (typeof value === "object" && value !== null) {
-    let changed = false;
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      const rewritten = rewriteRepeatTokens(val, basePath, index);
-      if (rewritten !== val) changed = true;
-      result[key] = rewritten;
-    }
-    return changed ? result : value;
-  }
-
-  return value;
 }

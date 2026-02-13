@@ -49,14 +49,14 @@ describe("resolveAction", () => {
     expect(resolved.params.count).toBe(5);
   });
 
-  it("resolves dynamic path params", () => {
+  it("resolves dynamic $state params", () => {
     const data = { userId: 123, settings: { theme: "dark" } };
     const resolved = resolveAction(
       {
         action: "updateUser",
         params: {
-          id: { path: "/userId" },
-          theme: { path: "/settings/theme" },
+          id: { $state: "/userId" },
+          theme: { $state: "/settings/theme" },
         },
       },
       data,

@@ -36,14 +36,13 @@ export interface VisibilityProviderProps {
  * Provider for visibility evaluation
  */
 export function VisibilityProvider({ children }: VisibilityProviderProps) {
-  const { state, authState } = useStateStore();
+  const { state } = useStateStore();
 
   const ctx: CoreVisibilityContext = useMemo(
     () => ({
       stateModel: state,
-      authState,
     }),
-    [state, authState],
+    [state],
   );
 
   const isVisible = useMemo(

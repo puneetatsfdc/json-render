@@ -11,7 +11,7 @@ import {
  *
  * Generic React Native rules (layout, tabs, navigation, element integrity)
  * are baked into the @json-render/react-native schema as defaultRules.
- * Core concepts (initial state, $path, Repeat, pushState/removeState)
+ * Core concepts (initial state, $state, Repeat, pushState/removeState)
  * are covered by the core system prompt.
  *
  * Only app-specific preferences belong here.

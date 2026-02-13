@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { flatToTree } from "./hooks";
+import { flatToTree, buildSpecFromParts, getTextFromParts } from "./hooks";
 
 describe("flatToTree", () => {
   it("converts array of elements to tree structure", () => {
@@ -99,14 +99,14 @@ describe("flatToTree", () => {
         type: "text",
         props: {},
         parentKey: null,
-        visible: { path: "/isVisible" },
+        visible: { $state: "/isVisible" },
       },
     ];
 
     const tree = flatToTree(elements);
 
     expect(tree.elements["conditional"].visible).toEqual({
-      path: "/isVisible",
+      $state: "/isVisible",
     });
   });
 
@@ -147,5 +147,284 @@ describe("flatToTree", () => {
 
     expect(tree.elements["parent"].children).toHaveLength(4);
     expect(tree.elements["parent"].children).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+// =============================================================================
+// buildSpecFromParts
+// =============================================================================
+
+describe("buildSpecFromParts", () => {
+  it("returns null when no data-spec parts are present", () => {
+    const parts = [
+      { type: "text", text: "Hello there" },
+      { type: "text", text: "How can I help?" },
+    ];
+    expect(buildSpecFromParts(parts)).toBeNull();
+  });
+
+  it("builds a spec from patch parts", () => {
+    const parts = [
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: { op: "add", path: "/root", value: "main" },
+        },
+      },
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: {
+            op: "add",
+            path: "/elements/main",
+            value: { type: "Card", props: { title: "Hello" }, children: [] },
+          },
+        },
+      },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    expect(spec!.root).toBe("main");
+    expect(spec!.elements.main).toEqual({
+      type: "Card",
+      props: { title: "Hello" },
+      children: [],
+    });
+  });
+
+  it("handles flat spec parts", () => {
+    const parts = [
+      {
+        type: "data-spec",
+        data: {
+          type: "flat",
+          spec: {
+            root: "card-1",
+            elements: {
+              "card-1": { type: "Card", props: {}, children: [] },
+            },
+          },
+        },
+      },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    expect(spec!.root).toBe("card-1");
+    expect(spec!.elements["card-1"]).toBeDefined();
+  });
+
+  it("ignores non-spec parts", () => {
+    const parts = [
+      { type: "text", text: "Some text" },
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: { op: "add", path: "/root", value: "main" },
+        },
+      },
+      { type: "tool-invocation", data: { toolName: "search" } },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    expect(spec!.root).toBe("main");
+  });
+
+  it("applies patches incrementally", () => {
+    const parts = [
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: { op: "add", path: "/root", value: "main" },
+        },
+      },
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: {
+            op: "add",
+            path: "/elements/main",
+            value: { type: "Stack", props: {}, children: ["child"] },
+          },
+        },
+      },
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: {
+            op: "add",
+            path: "/elements/child",
+            value: { type: "Text", props: { content: "Hi" }, children: [] },
+          },
+        },
+      },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    expect(Object.keys(spec!.elements)).toHaveLength(2);
+    expect(spec!.elements.child!.props.content).toBe("Hi");
+  });
+
+  it("handles nested spec parts via nestedToFlat", () => {
+    const parts = [
+      {
+        type: "data-spec",
+        data: {
+          type: "nested",
+          spec: {
+            type: "Card",
+            props: { title: "Nested" },
+            children: [
+              { type: "Text", props: { content: "Child" }, children: [] },
+            ],
+          },
+        },
+      },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    expect(spec!.root).toBeTruthy();
+    // nestedToFlat generates keys like el-0, el-1
+    const elementKeys = Object.keys(spec!.elements);
+    expect(elementKeys.length).toBe(2);
+
+    const rootEl = spec!.elements[spec!.root];
+    expect(rootEl).toBeDefined();
+    expect(rootEl!.type).toBe("Card");
+    expect(rootEl!.props.title).toBe("Nested");
+    expect(rootEl!.children).toHaveLength(1);
+
+    const childKey = rootEl!.children[0]!;
+    const childEl = spec!.elements[childKey];
+    expect(childEl).toBeDefined();
+    expect(childEl!.type).toBe("Text");
+    expect(childEl!.props.content).toBe("Child");
+  });
+
+  it("handles mixed patch + flat + nested parts in sequence", () => {
+    const parts = [
+      // Start with a patch
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: { op: "add", path: "/root", value: "main" },
+        },
+      },
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: {
+            op: "add",
+            path: "/elements/main",
+            value: { type: "Stack", props: {}, children: [] },
+          },
+        },
+      },
+      // Then a flat spec overwrites everything
+      {
+        type: "data-spec",
+        data: {
+          type: "flat",
+          spec: {
+            root: "card-1",
+            elements: {
+              "card-1": {
+                type: "Card",
+                props: { title: "Flat" },
+                children: [],
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    const spec = buildSpecFromParts(parts);
+    expect(spec).not.toBeNull();
+    // Flat overwrites root and elements
+    expect(spec!.root).toBe("card-1");
+    expect(spec!.elements["card-1"]).toBeDefined();
+    expect(spec!.elements["card-1"]!.type).toBe("Card");
+  });
+
+  it("returns empty elements map from empty parts list", () => {
+    const spec = buildSpecFromParts([]);
+    expect(spec).toBeNull();
+  });
+});
+
+// =============================================================================
+// getTextFromParts
+// =============================================================================
+
+describe("getTextFromParts", () => {
+  it("extracts text from text parts", () => {
+    const parts = [
+      { type: "text", text: "Hello" },
+      { type: "text", text: "World" },
+    ];
+    expect(getTextFromParts(parts)).toBe("Hello\n\nWorld");
+  });
+
+  it("returns empty string when no text parts", () => {
+    const parts = [
+      {
+        type: "data-spec",
+        data: {
+          type: "patch",
+          patch: { op: "add", path: "/root", value: "x" },
+        },
+      },
+    ];
+    expect(getTextFromParts(parts)).toBe("");
+  });
+
+  it("ignores non-text parts", () => {
+    const parts = [
+      { type: "text", text: "Before" },
+      { type: "data-spec", data: {} },
+      { type: "tool-invocation", data: {} },
+      { type: "text", text: "After" },
+    ];
+    expect(getTextFromParts(parts)).toBe("Before\n\nAfter");
+  });
+
+  it("trims whitespace from text parts", () => {
+    const parts = [
+      { type: "text", text: "  Hello  " },
+      { type: "text", text: "  World  " },
+    ];
+    expect(getTextFromParts(parts)).toBe("Hello\n\nWorld");
+  });
+
+  it("skips empty text parts", () => {
+    const parts = [
+      { type: "text", text: "Hello" },
+      { type: "text", text: "   " },
+      { type: "text", text: "World" },
+    ];
+    expect(getTextFromParts(parts)).toBe("Hello\n\nWorld");
+  });
+
+  it("ignores text parts with non-string text field", () => {
+    const parts = [
+      { type: "text", text: "Valid" },
+      { type: "text", text: undefined as unknown as string },
+      { type: "text", text: 42 as unknown as string },
+      { type: "text", text: "Also valid" },
+    ];
+    expect(getTextFromParts(parts)).toBe("Valid\n\nAlso valid");
   });
 });

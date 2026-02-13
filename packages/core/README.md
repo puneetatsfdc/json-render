@@ -27,7 +27,7 @@ export const schema = defineSchema((s) => ({
     root: s.object({
       type: s.ref("catalog.components"),
       props: s.propsOf("catalog.components"),
-      children: s.array(s.self()),
+      children: s.array(s.string()), // Element keys (flat spec format)
     }),
   }),
   catalog: s.object({
@@ -119,9 +119,9 @@ const finalSpec = compiler.getResult();
 SpecStream format uses [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902) operations (each line is a patch):
 
 ```jsonl
-{"op":"add","path":"/root/type","value":"Card"}
-{"op":"add","path":"/root/props","value":{"title":"Hello"}}
-{"op":"add","path":"/root/children/0","value":{"type":"Button","props":{"label":"Click"}}}
+{"op":"add","path":"/root","value":"card-1"}
+{"op":"add","path":"/elements/card-1","value":{"type":"Card","props":{"title":"Hello"},"children":["btn-1"]}}
+{"op":"add","path":"/elements/btn-1","value":{"type":"Button","props":{"label":"Click"},"children":[]}}
 ```
 
 All six RFC 6902 operations are supported: `add`, `remove`, `replace`, `move`, `copy`, `test`.
@@ -192,7 +192,7 @@ const spec = compileSpecStream<MySpec>(jsonlString);
 
 | Export | Purpose |
 |--------|---------|
-| `validateSpec(spec, catalog?)` | Validate spec structure and return issues |
+| `validateSpec(spec, options?)` | Validate spec structure and return issues |
 | `autoFixSpec(spec)` | Auto-fix common spec issues (returns corrected copy) |
 | `formatSpecIssues(issues)` | Format validation issues as readable strings |
 
@@ -211,16 +211,32 @@ const spec = compileSpecStream<MySpec>(jsonlString);
 
 Any prop value can be a dynamic expression that resolves based on data state at render time. Expressions are resolved by the renderer before props reach components.
 
-### Data Binding (`$path`)
+### Data Binding (`$state`)
 
 Read a value directly from the state model:
 
 ```json
 {
-  "color": { "$path": "/theme/primary" },
-  "label": { "$path": "/user/name" }
+  "color": { "$state": "/theme/primary" },
+  "label": { "$state": "/user/name" }
 }
 ```
+
+### Two-Way Binding (`$bindState` / `$bindItem`)
+
+Use `{ "$bindState": "/path" }` on the natural value prop for form components that need read/write access. The component reads from and writes to the state path:
+
+```json
+{
+  "type": "Input",
+  "props": {
+    "value": { "$bindState": "/form/email" },
+    "placeholder": "Email"
+  }
+}
+```
+
+Inside a repeat scope, use `{ "$bindItem": "completed" }` to bind to a field on the current item:
 
 ### Conditional (`$cond` / `$then` / `$else`)
 
@@ -229,12 +245,12 @@ Evaluate a condition (same syntax as visibility conditions) and pick a value:
 ```json
 {
   "color": {
-    "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
+    "$cond": { "$state": "/activeTab", "eq": "home" },
     "$then": "#007AFF",
     "$else": "#8E8E93"
   },
   "name": {
-    "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
+    "$cond": { "$state": "/activeTab", "eq": "home" },
     "$then": "home",
     "$else": "home-outline"
   }
@@ -246,12 +262,32 @@ Evaluate a condition (same syntax as visibility conditions) and pick a value:
 ```json
 {
   "label": {
-    "$cond": { "path": "/user/isAdmin" },
-    "$then": { "$path": "/admin/greeting" },
+    "$cond": { "$state": "/user/isAdmin" },
+    "$then": { "$state": "/admin/greeting" },
     "$else": "Welcome"
   }
 }
 ```
+
+### Repeat Item (`$item`)
+
+Inside children of a repeated element, read a field from the current array item:
+
+```json
+{ "$item": "title" }
+```
+
+Use `""` to get the entire item object. `$item` takes a path string because items are typically objects with nested fields to navigate.
+
+### Repeat Index (`$index`)
+
+Get the current array index inside a repeat:
+
+```json
+{ "$index": true }
+```
+
+`$index` uses `true` as a sentinel flag because the index is a scalar value with no sub-path to navigate (unlike `$item` which needs a path).
 
 ### API
 
@@ -260,12 +296,51 @@ import { resolvePropValue, resolveElementProps } from "@json-render/core";
 
 // Resolve a single value
 const color = resolvePropValue(
-  { $cond: { eq: [{ path: "/active" }, "yes"] }, $then: "blue", $else: "gray" },
+  { $cond: { $state: "/active", eq: "yes" }, $then: "blue", $else: "gray" },
   { stateModel: myState }
 );
 
 // Resolve all props on an element
 const resolved = resolveElementProps(element.props, { stateModel: myState });
+```
+
+## Visibility Conditions
+
+Visibility conditions control when elements are shown. `VisibilityContext` is `{ stateModel: StateModel, repeatItem?: unknown, repeatIndex?: number }`.
+
+### Syntax
+
+```typescript
+{ "$state": "/path" }                          // truthiness
+{ "$state": "/path", "not": true }             // falsy
+{ "$state": "/path", "eq": value }             // equality
+{ "$state": "/path", "neq": value }            // inequality
+{ "$state": "/path", "gt": number }            // greater than
+{ "$item": "field" }                          // repeat item field
+{ "$index": true, "gt": 0 }                   // repeat index
+[ condition, condition ]                       // implicit AND
+{ "$and": [ condition, condition ] }           // explicit AND
+{ "$or": [ condition, condition ] }            // OR
+true / false                                   // always / never
+```
+
+### TypeScript Helpers
+
+```typescript
+import { visibility } from "@json-render/core";
+
+visibility.always              // true
+visibility.never               // false
+visibility.when("/path")       // { $state: "/path" }
+visibility.unless("/path")     // { $state: "/path", not: true }
+visibility.eq("/path", val)    // { $state: "/path", eq: val }
+visibility.neq("/path", val)   // { $state: "/path", neq: val }
+visibility.gt("/path", n)      // { $state: "/path", gt: n }
+visibility.gte("/path", n)     // { $state: "/path", gte: n }
+visibility.lt("/path", n)      // { $state: "/path", lt: n }
+visibility.lte("/path", n)     // { $state: "/path", lte: n }
+visibility.and(cond1, cond2)   // { $and: [cond1, cond2] }
+visibility.or(cond1, cond2)    // { $or: [cond1, cond2] }
 ```
 
 ## User Prompt Builder
@@ -299,7 +374,7 @@ Validate spec structure and auto-fix common issues:
 import { validateSpec, autoFixSpec, formatSpecIssues } from "@json-render/core";
 
 // Validate a spec
-const { valid, issues } = validateSpec(spec, catalog);
+const { valid, issues } = validateSpec(spec);
 
 // Format issues for display
 console.log(formatSpecIssues(issues));
@@ -313,8 +388,8 @@ const fixed = autoFixSpec(spec);
 json-render supports completely different spec formats for different renderers:
 
 ```typescript
-// React: Element tree
-{ root: { type: "Card", props: {...}, children: [...] } }
+// React: Flat element map
+{ root: "card-1", elements: { "card-1": { type: "Card", props: {...}, children: [...] } } }
 
 // Remotion: Timeline
 { composition: {...}, tracks: [...], clips: [...] }

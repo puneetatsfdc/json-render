@@ -1,6 +1,7 @@
 import type { MDXComponents } from "mdx/types";
 import Link from "next/link";
 import { Code } from "@/components/code";
+import { GenerationModesDiagram } from "@/components/generation-modes-diagram";
 import { PackageInstall } from "@/components/package-install";
 
 function slugify(text: string): string {
@@ -130,7 +131,9 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     ),
     table: ({ children }: { children?: React.ReactNode }) => (
       <div className="my-6 overflow-x-auto">
-        <table className="w-full text-sm border-collapse">{children}</table>
+        <table className="mdx-table w-full text-sm border-collapse">
+          {children}
+        </table>
       </div>
     ),
     th: ({ children }: { children?: React.ReactNode }) => (
@@ -145,6 +148,7 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     ),
     em: ({ children }: { children?: React.ReactNode }) => <em>{children}</em>,
     // Custom components available in all MDX files
+    GenerationModesDiagram,
     PackageInstall,
   };
 }

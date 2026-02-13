@@ -47,6 +47,7 @@ function buildRegistry(
   const registry: ComponentRegistry = {};
 
   for (const [name, Component] of Object.entries(components)) {
+    const noop = () => {};
     registry[name] = (renderProps: {
       element: { type: string; props: Record<string, unknown> };
       children?: ReactNode;
@@ -55,7 +56,7 @@ function buildRegistry(
       Component({
         element: renderProps.element,
         children: renderProps.children,
-        emit: renderProps.emit,
+        emit: renderProps.emit ?? noop,
         loading,
         state: dataRef.current,
         getValue: (path: string) => {

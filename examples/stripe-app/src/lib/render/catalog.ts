@@ -286,7 +286,7 @@ export const stripeCatalog = defineCatalog(schema, {
         placeholder: z.string().nullable(),
         description: z.string().nullable(),
         error: z.string().nullable(),
-        valuePath: z.string(),
+        value: z.string().nullable(),
         type: z
           .enum(["text", "email", "password", "number", "tel", "url"])
           .default("text"),
@@ -294,11 +294,12 @@ export const stripeCatalog = defineCatalog(schema, {
         disabled: z.boolean().nullable(),
         required: z.boolean().nullable(),
       }),
-      description: "Text input field with label, validation, and data binding",
+      description:
+        "Text input field with label, validation. Use $bindState on value for two-way binding.",
       example: {
         label: "Email",
         placeholder: "customer@example.com",
-        valuePath: "/form/email",
+        value: { $bindState: "/form/email" },
         type: "email",
       },
     },
@@ -309,12 +310,13 @@ export const stripeCatalog = defineCatalog(schema, {
         placeholder: z.string().nullable(),
         description: z.string().nullable(),
         error: z.string().nullable(),
-        valuePath: z.string(),
+        value: z.string().nullable(),
         rows: z.number().default(3),
         disabled: z.boolean().nullable(),
         required: z.boolean().nullable(),
       }),
-      description: "Multi-line text input with configurable rows",
+      description:
+        "Multi-line text input with configurable rows. Use $bindState on value for two-way binding.",
     },
 
     Select: {
@@ -322,13 +324,14 @@ export const stripeCatalog = defineCatalog(schema, {
         label: z.string(),
         description: z.string().nullable(),
         error: z.string().nullable(),
-        valuePath: z.string(),
+        value: z.string().nullable(),
         options: z.array(z.object({ value: z.string(), label: z.string() })),
         size: z.enum(["small", "medium", "large"]).default("medium"),
         disabled: z.boolean().nullable(),
         required: z.boolean().nullable(),
       }),
-      description: "Dropdown select input with configurable options",
+      description:
+        "Dropdown select input with configurable options. Use $bindState on value for two-way binding.",
     },
 
     Checkbox: {
@@ -336,34 +339,37 @@ export const stripeCatalog = defineCatalog(schema, {
         label: z.string(),
         description: z.string().nullable(),
         error: z.string().nullable(),
-        valuePath: z.string(),
+        checked: z.boolean().nullable(),
         defaultChecked: z.boolean().nullable(),
         disabled: z.boolean().nullable(),
       }),
-      description: "Checkbox input with label and description",
+      description:
+        "Checkbox input with label and description. Use $bindState on checked for two-way binding.",
     },
 
     Radio: {
       props: z.object({
         label: z.string(),
         description: z.string().nullable(),
-        valuePath: z.string(),
-        value: z.string(),
+        value: z.string().nullable(),
+        optionValue: z.string(),
         name: z.string(),
         disabled: z.boolean().nullable(),
       }),
-      description: "Radio button input for selecting one option from a group",
+      description:
+        "Radio button input for selecting one option from a group. Use $bindState on value for two-way binding.",
     },
 
     Switch: {
       props: z.object({
         label: z.string(),
         description: z.string().nullable(),
-        valuePath: z.string(),
+        checked: z.boolean().nullable(),
         defaultChecked: z.boolean().nullable(),
         disabled: z.boolean().nullable(),
       }),
-      description: "Toggle switch for boolean values",
+      description:
+        "Toggle switch for boolean values. Use $bindState on checked for two-way binding.",
     },
 
     DateField: {
@@ -371,11 +377,12 @@ export const stripeCatalog = defineCatalog(schema, {
         label: z.string(),
         description: z.string().nullable(),
         error: z.string().nullable(),
-        valuePath: z.string(),
+        value: z.string().nullable(),
         size: z.enum(["small", "medium", "large"]).default("medium"),
         disabled: z.boolean().nullable(),
       }),
-      description: "Date input field with date picker",
+      description:
+        "Date input field with date picker. Use $bindState on value for two-way binding.",
     },
 
     // =========================================================================
@@ -424,7 +431,7 @@ export const stripeCatalog = defineCatalog(schema, {
     // =========================================================================
     BarChart: {
       props: z.object({
-        statePath: z.string(),
+        data: z.array(z.record(z.unknown())).nullable(),
         xKey: z.string(),
         yKey: z.string(),
         colorKey: z.string().nullable(),
@@ -433,12 +440,13 @@ export const stripeCatalog = defineCatalog(schema, {
         showLegend: z.boolean().nullable(),
         showTooltip: z.boolean().default(true),
       }),
-      description: "Bar chart visualization from data path",
+      description:
+        "Bar chart visualization. Use $state on data to bind to state array.",
     },
 
     LineChart: {
       props: z.object({
-        statePath: z.string(),
+        data: z.array(z.record(z.unknown())).nullable(),
         xKey: z.string(),
         yKey: z.string(),
         colorKey: z.string().nullable(),
@@ -447,17 +455,19 @@ export const stripeCatalog = defineCatalog(schema, {
         showLegend: z.boolean().nullable(),
         showTooltip: z.boolean().default(true),
       }),
-      description: "Line chart visualization from data path",
+      description:
+        "Line chart visualization. Use $state on data to bind to state array.",
     },
 
     Sparkline: {
       props: z.object({
-        statePath: z.string(),
+        data: z.array(z.record(z.unknown())).nullable(),
         xKey: z.string(),
         yKey: z.string(),
         showTooltip: z.boolean().nullable(),
       }),
-      description: "Compact sparkline chart for inline data visualization",
+      description:
+        "Compact sparkline chart for inline data visualization. Use $state on data to bind to state array.",
     },
 
     // =========================================================================
@@ -466,16 +476,16 @@ export const stripeCatalog = defineCatalog(schema, {
     DataTable: {
       props: z.object({
         title: z.string().nullable(),
-        statePath: z.string(),
+        data: z.array(z.record(z.unknown())).nullable(),
         columns: z.array(z.object({ key: z.string(), label: z.string() })),
         emptyMessage: z.string().nullable(),
         rowAction: z.string().nullable(),
       }),
       description:
-        "Data table with configurable columns and optional row actions",
+        "Data table with configurable columns and optional row actions. Use $state on data to bind to state array.",
       example: {
         title: "Recent Payments",
-        statePath: "/payments/data",
+        data: { $state: "/payments/data" },
         columns: [
           { key: "amount", label: "Amount" },
           { key: "status", label: "Status" },

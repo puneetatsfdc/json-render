@@ -91,6 +91,10 @@ function App({ spec }) {
 - `ListItem` - list row with title, subtitle, accessory
 - `Modal` - bottom sheet modal
 
+## Visibility Conditions
+
+Use `visible` on elements. Syntax: `{ "$state": "/path" }`, `{ "$state": "/path", "eq": value }`, `{ "$state": "/path", "not": true }`, `[ cond1, cond2 ]` for AND.
+
 ## Pressable + setState Pattern
 
 Use `Pressable` with the built-in `setState` action for interactive UIs like tab bars:
@@ -100,7 +104,7 @@ Use `Pressable` with the built-in `setState` action for interactive UIs like tab
   "type": "Pressable",
   "props": {
     "action": "setState",
-    "actionParams": { "path": "/activeTab", "value": "home" }
+    "actionParams": { "statePath": "/activeTab", "value": "home" }
   },
   "children": ["home-icon", "home-label"]
 }
@@ -110,27 +114,29 @@ Use `Pressable` with the built-in `setState` action for interactive UIs like tab
 
 Any prop value can be a data-driven expression resolved at render time:
 
-- **`{ "$path": "/state/key" }`** - reads from data model
+- **`{ "$state": "/state/key" }`** - reads from state model (one-way read)
+- **`{ "$bindState": "/path" }`** - two-way binding: use on the natural value prop (value, checked, pressed, etc.) of form components.
+- **`{ "$bindItem": "field" }`** - two-way binding to a repeat item field. Use inside repeat scopes.
 - **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - conditional value
 
 ```json
 {
-  "color": {
-    "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
-    "$then": "#007AFF",
-    "$else": "#8E8E93"
+  "type": "TextInput",
+  "props": {
+    "value": { "$bindState": "/form/email" },
+    "placeholder": "Email"
   }
 }
 ```
 
-Components receive already-resolved props. No changes needed to component implementations.
+Components do not use a `statePath` prop for two-way binding. Use `{ "$bindState": "/path" }` on the natural value prop instead.
 
 ## Built-in Actions
 
 The `setState` action is handled automatically by `ActionProvider` and updates the state model directly, which re-evaluates visibility conditions and dynamic prop expressions:
 
 ```json
-{ "action": "setState", "actionParams": { "path": "/activeTab", "value": "home" } }
+{ "action": "setState", "actionParams": { "statePath": "/activeTab", "value": "home" } }
 ```
 
 ## Providers
@@ -153,9 +159,10 @@ The `setState` action is handled automatically by `ActionProvider` and updates t
 | `standardActionDefinitions` | Catalog definitions for standard actions |
 | `standardComponents` | Pre-built component implementations |
 | `createStandardActionHandlers` | Create handlers for standard actions |
-| `useStateStore` | Access data context |
-| `useStateValue` | Get single value from data |
-| `useStateBinding` | Two-way data binding |
+| `useStateStore` | Access state context |
+| `useStateValue` | Get single value from state |
+| `useBoundProp` | Two-way state binding via `$bindState`/`$bindItem` |
+| `useStateBinding` | _(deprecated)_ Legacy two-way binding by path |
 | `useActions` | Access actions context |
 | `useAction` | Get a single action dispatch function |
 | `useUIStream` | Stream specs from an API endpoint |

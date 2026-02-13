@@ -1,6 +1,6 @@
 "use client";
 
-import { useVideoConfig, spring, interpolate, Easing } from "remotion";
+import { useVideoConfig, spring, interpolate } from "remotion";
 import type { Clip, TransitionStyles, MotionStyles } from "./types";
 
 /**

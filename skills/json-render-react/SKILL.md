@@ -80,6 +80,10 @@ The React schema uses an element tree format:
 }
 ```
 
+## Visibility Conditions
+
+Use `visible` on elements to show/hide based on state. New syntax: `{ "$state": "/path" }`, `{ "$state": "/path", "eq": value }`, `{ "$state": "/path", "not": true }`, `{ "$and": [cond1, cond2] }` for AND, `{ "$or": [cond1, cond2] }` for OR. Helpers: `visibility.when("/path")`, `visibility.unless("/path")`, `visibility.eq("/path", val)`, `visibility.and(cond1, cond2)`, `visibility.or(cond1, cond2)`.
+
 ## Providers
 
 | Provider | Purpose |
@@ -93,20 +97,24 @@ The React schema uses an element tree format:
 
 Any prop value can be a data-driven expression resolved by the renderer before components receive props:
 
-- **`{ "$path": "/state/key" }`** - reads from data model
+- **`{ "$state": "/state/key" }`** - reads from state model (one-way read)
+- **`{ "$bindState": "/path" }`** - two-way binding: reads from state and enables write-back. Use on the natural value prop (value, checked, pressed, etc.) of form components.
+- **`{ "$bindItem": "field" }`** - two-way binding to a repeat item field. Use inside repeat scopes.
 - **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - conditional value
 
 ```json
 {
-  "color": {
-    "$cond": { "eq": [{ "path": "/status" }, "active"] },
-    "$then": "green",
-    "$else": "gray"
+  "type": "Input",
+  "props": {
+    "value": { "$bindState": "/form/email" },
+    "placeholder": "Email"
   }
 }
 ```
 
-Components receive already-resolved props. No changes needed to component implementations.
+Components do not use a `statePath` prop for two-way binding. Use `{ "$bindState": "/path" }` on the natural value prop instead.
+
+Components receive already-resolved props. For two-way bound props, use the `useBoundProp` hook with the `bindings` map the renderer provides.
 
 ## Event System
 
@@ -115,7 +123,7 @@ Components use `emit` to fire named events. The element's `on` field maps events
 ```tsx
 // Component emits a named event
 Button: ({ props, emit }) => (
-  <button onClick={() => emit?.("press")}>{props.label}</button>
+  <button onClick={() => emit("press")}>{props.label}</button>
 ),
 ```
 
@@ -132,8 +140,33 @@ Button: ({ props, emit }) => (
 The `setState` action is handled automatically by `ActionProvider` and updates the state model directly, which re-evaluates visibility conditions and dynamic prop expressions:
 
 ```json
-{ "action": "setState", "actionParams": { "path": "/activeTab", "value": "home" } }
+{ "action": "setState", "actionParams": { "statePath": "/activeTab", "value": "home" } }
 ```
+
+Note: `statePath` in action params (e.g. `setState.statePath`) targets the mutation path. Two-way binding in component props uses `{ "$bindState": "/path" }` on the value prop, not `statePath`.
+
+## useBoundProp
+
+For form components that need two-way binding, use `useBoundProp` with the `bindings` map the renderer provides when a prop uses `{ "$bindState": "/path" }` or `{ "$bindItem": "field" }`:
+
+```tsx
+import { useBoundProp } from "@json-render/react";
+
+Input: ({ element, bindings }) => {
+  const [value, setValue] = useBoundProp<string>(
+    element.props.value,
+    bindings?.value
+  );
+  return (
+    <input
+      value={value ?? ""}
+      onChange={(e) => setValue(e.target.value)}
+    />
+  );
+},
+```
+
+`useBoundProp(propValue, bindingPath)` returns `[value, setValue]`. The `value` is the resolved prop; `setValue` writes back to the bound state path (no-op if not bound).
 
 ## Key Exports
 
@@ -144,7 +177,7 @@ The `setState` action is handled automatically by `ActionProvider` and updates t
 | `schema` | Element tree schema |
 | `useStateStore` | Access state context |
 | `useStateValue` | Get single value from state |
-| `useStateBinding` | Two-way state binding |
+| `useBoundProp` | Two-way binding for `$bindState`/`$bindItem` expressions |
 | `useActions` | Access actions context |
 | `useAction` | Get a single action dispatch function |
 | `useUIStream` | Stream specs from an API endpoint |

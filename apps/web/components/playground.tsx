@@ -18,6 +18,7 @@ import { Header } from "./header";
 import { Sheet, SheetContent, SheetTitle } from "./ui/sheet";
 import { PlaygroundRenderer } from "@/lib/render/renderer";
 import { playgroundCatalog } from "@/lib/render/catalog";
+import { buildCatalogDisplayData } from "@/lib/render/catalog-display";
 
 type Tab = "json" | "nested" | "stream" | "catalog";
 type RenderView = "preview" | "code";
@@ -465,88 +466,10 @@ ${jsx}
   );
 
   // Catalog data for the catalog tab
-  const catalogData = useMemo(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = playgroundCatalog.data as any;
-
-    function extractFields(zodObj: unknown): { name: string; type: string }[] {
-      if (!zodObj) return [];
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const obj = zodObj as any;
-        // Zod v4: shape is a plain object; Zod v3: shape is via _def.shape()
-        const shape =
-          typeof obj.shape === "object"
-            ? obj.shape
-            : typeof obj._def?.shape === "function"
-              ? obj._def.shape()
-              : typeof obj._def?.shape === "object"
-                ? obj._def.shape
-                : null;
-        if (!shape) return [];
-
-        return Object.entries(shape).map(([name, schema]) => {
-          let type = "unknown";
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const s = schema as any;
-            const typeName: string =
-              s?._zod?.def?.type ?? s?._def?.typeName ?? "";
-            if (typeName.includes("string")) type = "string";
-            else if (typeName.includes("number")) type = "number";
-            else if (typeName.includes("boolean")) type = "boolean";
-            else if (typeName.includes("array")) type = "array";
-            else if (typeName.includes("enum")) {
-              const values = s?._zod?.def?.values ?? s?._def?.values;
-              type = Array.isArray(values) ? values.join(" | ") : "enum";
-            } else if (typeName.includes("union")) type = "union";
-            else if (typeName.includes("nullable")) {
-              const inner = s?._zod?.def?.innerType ?? s?._def?.innerType;
-              const innerName: string =
-                inner?._zod?.def?.type ?? inner?._def?.typeName ?? "";
-              if (innerName.includes("string")) type = "string?";
-              else if (innerName.includes("number")) type = "number?";
-              else if (innerName.includes("boolean")) type = "boolean?";
-              else if (innerName.includes("array")) type = "array?";
-              else if (innerName.includes("enum")) {
-                const values = inner?._zod?.def?.values ?? inner?._def?.values;
-                type = Array.isArray(values)
-                  ? `(${values.join(" | ")})?`
-                  : "enum?";
-              } else type = "optional";
-            }
-          } catch {
-            // ignore
-          }
-          return { name, type };
-        });
-      } catch {
-        return [];
-      }
-    }
-
-    const components = Object.entries(raw.components ?? {})
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(([name, def]: [string, any]) => ({
-        name,
-        description: (def.description as string) ?? "",
-        props: extractFields(def.props),
-        slots: (def.slots as string[]) ?? [],
-        events: (def.events as string[]) ?? [],
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const actions = Object.entries(raw.actions ?? {})
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(([name, def]: [string, any]) => ({
-        name,
-        description: (def.description as string) ?? "",
-        params: extractFields(def.params),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    return { components, actions };
-  }, []);
+  const catalogData = useMemo(
+    () => buildCatalogDisplayData(playgroundCatalog.data),
+    [],
+  );
 
   // Code pane content
   const copyText =

@@ -3,7 +3,7 @@
  * Used by both page metadata exports and the OG image route.
  *
  * Keys mirror the page's URL path (e.g., "docs/changelog" → /og/docs/changelog).
- * Values are display titles (without the "| json-render" suffix -- the layout template adds that).
+ * Values are display titles (without the "| json-render" suffix — the layout template adds that).
  */
 export const PAGE_TITLES: Record<string, string> = {
   // Home (no slug)
@@ -24,6 +24,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "docs/validation": "Validation",
   "docs/data-binding": "Data Binding",
   "docs/visibility": "Visibility",
+  "docs/generation-modes": "Generation Modes",
   "docs/code-export": "Code Export",
   "docs/custom-schema": "Custom Schema & Renderer",
   "docs/ai-sdk": "AI SDK Integration",
@@ -31,6 +32,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "docs/openapi": "OpenAPI Integration",
   "docs/a2ui": "A2UI Integration",
   "docs/ag-ui": "AG-UI Integration",
+  "docs/migration": "Migration Guide",
   "docs/changelog": "Changelog",
 
   // API references

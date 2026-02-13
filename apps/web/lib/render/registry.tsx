@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { defineRegistry, useStateBinding } from "@json-render/react";
+import {
+  defineRegistry,
+  useBoundProp,
+  useStateBinding,
+  useFieldValidation,
+} from "@json-render/react";
 import { toast } from "sonner";
 
 import { playgroundCatalog } from "./catalog";
@@ -210,25 +215,25 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       />
     ),
 
-    Tabs: ({ props, emit }) => {
+    Tabs: ({ props, bindings, emit }) => {
       const tabs = props.tabs ?? [];
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState(
         props.defaultValue ?? tabs[0]?.value ?? "",
       );
-      const value = props.statePath
-        ? (boundValue ?? tabs[0]?.value ?? "")
-        : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? tabs[0]?.value ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
 
       return (
         <TabsPrimitive
           value={value}
           onValueChange={(v) => {
             setValue(v);
-            emit?.("change");
+            emit("change");
           }}
         >
           <TabsList>
@@ -765,13 +770,20 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
 
     // ── Form Inputs ───────────────────────────────────────────────────
 
-    Input: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Input: ({ props, bindings, emit }) => {
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState("");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
+
+      const hasValidation = !!(bindings?.value && props.checks?.length);
+      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
+        checks: props.checks ?? [],
+      });
 
       return (
         <div className="space-y-2">
@@ -784,22 +796,35 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") emit?.("submit");
+              if (e.key === "Enter") emit("submit");
             }}
-            onFocus={() => emit?.("focus")}
-            onBlur={() => emit?.("blur")}
+            onFocus={() => emit("focus")}
+            onBlur={() => {
+              if (hasValidation) validate();
+              emit("blur");
+            }}
           />
+          {errors.length > 0 && (
+            <p className="text-sm text-destructive">{errors[0]}</p>
+          )}
         </div>
       );
     },
 
-    Textarea: ({ props }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Textarea: ({ props, bindings }) => {
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState("");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
+
+      const hasValidation = !!(bindings?.value && props.checks?.length);
+      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
+        checks: props.checks ?? [],
+      });
 
       return (
         <div className="space-y-2">
@@ -811,24 +836,37 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             rows={props.rows ?? 3}
             value={value}
             onChange={(e) => setValue(e.target.value)}
+            onBlur={() => {
+              if (hasValidation) validate();
+            }}
           />
+          {errors.length > 0 && (
+            <p className="text-sm text-destructive">{errors[0]}</p>
+          )}
         </div>
       );
     },
 
-    Select: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Select: ({ props, bindings, emit }) => {
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState<string>("");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
       const rawOptions = props.options ?? [];
       // Coerce options to strings – AI may produce objects/numbers instead of
       // plain strings which would cause duplicate `[object Object]` keys.
       const options = rawOptions.map((opt) =>
         typeof opt === "string" ? opt : String(opt ?? ""),
       );
+
+      const hasValidation = !!(bindings?.value && props.checks?.length);
+      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
+        checks: props.checks ?? [],
+      });
 
       return (
         <div className="space-y-2">
@@ -837,7 +875,8 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             value={value}
             onValueChange={(v) => {
               setValue(v);
-              emit?.("change");
+              if (hasValidation) validate();
+              emit("change");
             }}
           >
             <SelectTrigger className="w-full">
@@ -854,17 +893,22 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
               ))}
             </SelectContent>
           </Select>
+          {errors.length > 0 && (
+            <p className="text-sm text-destructive">{errors[0]}</p>
+          )}
         </div>
       );
     },
 
-    Checkbox: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<boolean>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Checkbox: ({ props, bindings, emit }) => {
+      const [boundChecked, setBoundChecked] = useBoundProp<boolean>(
+        props.checked as boolean | undefined,
+        bindings?.checked,
+      );
       const [localChecked, setLocalChecked] = useState(!!props.checked);
-      const checked = props.statePath ? (boundValue ?? false) : localChecked;
-      const setChecked = props.statePath ? setBoundValue! : setLocalChecked;
+      const isBound = !!bindings?.checked;
+      const checked = isBound ? (boundChecked ?? false) : localChecked;
+      const setChecked = isBound ? setBoundChecked : setLocalChecked;
 
       return (
         <div className="flex items-center space-x-2">
@@ -873,7 +917,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             checked={checked}
             onCheckedChange={(c) => {
               setChecked(c === true);
-              emit?.("change");
+              emit("change");
             }}
           />
           <Label htmlFor={props.name} className="cursor-pointer">
@@ -883,17 +927,19 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    Radio: ({ props, emit }) => {
+    Radio: ({ props, bindings, emit }) => {
       const rawOptions = props.options ?? [];
       const options = rawOptions.map((opt) =>
         typeof opt === "string" ? opt : String(opt ?? ""),
       );
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState(options[0] ?? "");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
 
       return (
         <div className="space-y-2">
@@ -902,7 +948,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             value={value}
             onValueChange={(v) => {
               setValue(v);
-              emit?.("change");
+              emit("change");
             }}
           >
             {options.map((opt, idx) => (
@@ -927,13 +973,15 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    Switch: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<boolean>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Switch: ({ props, bindings, emit }) => {
+      const [boundChecked, setBoundChecked] = useBoundProp<boolean>(
+        props.checked as boolean | undefined,
+        bindings?.checked,
+      );
       const [localChecked, setLocalChecked] = useState(!!props.checked);
-      const checked = props.statePath ? (boundValue ?? false) : localChecked;
-      const setChecked = props.statePath ? setBoundValue! : setLocalChecked;
+      const isBound = !!bindings?.checked;
+      const checked = isBound ? (boundChecked ?? false) : localChecked;
+      const setChecked = isBound ? setBoundChecked : setLocalChecked;
 
       return (
         <div className="flex items-center justify-between space-x-2">
@@ -945,22 +993,22 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             checked={checked}
             onCheckedChange={(c) => {
               setChecked(c);
-              emit?.("change");
+              emit("change");
             }}
           />
         </div>
       );
     },
 
-    Slider: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<number>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Slider: ({ props, bindings, emit }) => {
+      const [boundValue, setBoundValue] = useBoundProp<number>(
+        props.value as number | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState(props.min ?? 0);
-      const value = props.statePath
-        ? (boundValue ?? props.min ?? 0)
-        : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? props.min ?? 0) : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
 
       return (
         <div className="space-y-2">
@@ -977,7 +1025,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
             step={props.step ?? 1}
             onValueChange={(v) => {
               setValue(v[0] ?? 0);
-              emit?.("change");
+              emit("change");
             }}
           />
         </div>
@@ -998,7 +1046,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
         <Button
           variant={variant}
           disabled={props.disabled ?? false}
-          onClick={() => emit?.("press")}
+          onClick={() => emit("press")}
         >
           {props.label}
         </Button>
@@ -1009,7 +1057,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       <Button
         variant="link"
         className="h-auto p-0"
-        onClick={() => emit?.("press")}
+        onClick={() => emit("press")}
       >
         {props.label}
       </Button>
@@ -1024,10 +1072,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             {items.map((item) => (
-              <DropdownMenuItem
-                key={item.value}
-                onClick={() => emit?.("select")}
-              >
+              <DropdownMenuItem key={item.value} onClick={() => emit("select")}>
                 {item.label}
               </DropdownMenuItem>
             ))}
@@ -1036,13 +1081,15 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    Toggle: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<boolean>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+    Toggle: ({ props, bindings, emit }) => {
+      const [boundPressed, setBoundPressed] = useBoundProp<boolean>(
+        props.pressed as boolean | undefined,
+        bindings?.pressed,
+      );
       const [localPressed, setLocalPressed] = useState(props.pressed ?? false);
-      const pressed = props.statePath ? (boundValue ?? false) : localPressed;
-      const setPressed = props.statePath ? setBoundValue! : setLocalPressed;
+      const isBound = !!bindings?.pressed;
+      const pressed = isBound ? (boundPressed ?? false) : localPressed;
+      const setPressed = isBound ? setBoundPressed : setLocalPressed;
 
       return (
         <Toggle
@@ -1050,7 +1097,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
           pressed={pressed}
           onPressedChange={(v) => {
             setPressed(v);
-            emit?.("change");
+            emit("change");
           }}
         >
           {props.label}
@@ -1058,15 +1105,17 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    ToggleGroup: ({ props, emit }) => {
+    ToggleGroup: ({ props, bindings, emit }) => {
       const type = props.type ?? "single";
       const items = props.items ?? [];
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+      const [boundValue, setBoundValue] = useBoundProp<string>(
+        props.value as string | undefined,
+        bindings?.value,
+      );
       const [localValue, setLocalValue] = useState(items[0]?.value ?? "");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.value;
+      const value = isBound ? (boundValue ?? "") : localValue;
+      const setValue = isBound ? setBoundValue : setLocalValue;
 
       if (type === "multiple") {
         return (
@@ -1087,7 +1136,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
           onValueChange={(v) => {
             if (v) {
               setValue(v);
-              emit?.("change");
+              emit("change");
             }
           }}
         >
@@ -1100,14 +1149,16 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    ButtonGroup: ({ props, emit }) => {
+    ButtonGroup: ({ props, bindings, emit }) => {
       const buttons = props.buttons ?? [];
-      const [boundValue, setBoundValue] = props.statePath
-        ? useStateBinding<string>(props.statePath) // eslint-disable-line react-hooks/rules-of-hooks
-        : [undefined, undefined];
+      const [boundSelected, setBoundSelected] = useBoundProp<string>(
+        props.selected as string | undefined,
+        bindings?.selected,
+      );
       const [localValue, setLocalValue] = useState(buttons[0]?.value ?? "");
-      const value = props.statePath ? (boundValue ?? "") : localValue;
-      const setValue = props.statePath ? setBoundValue! : setLocalValue;
+      const isBound = !!bindings?.selected;
+      const value = isBound ? (boundSelected ?? "") : localValue;
+      const setValue = isBound ? setBoundSelected : setLocalValue;
 
       return (
         <div className="inline-flex rounded-md border border-border">
@@ -1123,7 +1174,7 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
               } ${i === buttons.length - 1 ? "rounded-r-md" : ""}`}
               onClick={() => {
                 setValue(btn.value);
-                emit?.("change");
+                emit("change");
               }}
             >
               {btn.label}
@@ -1133,11 +1184,12 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
     },
 
-    Pagination: ({ props, emit }) => {
-      const [boundValue, setBoundValue] = useStateBinding<number>(
-        props.statePath,
+    Pagination: ({ props, bindings, emit }) => {
+      const [boundPage, setBoundPage] = useBoundProp<number>(
+        props.page as number | undefined,
+        bindings?.page,
       );
-      const currentPage = boundValue ?? 1;
+      const currentPage = boundPage ?? 1;
       const pages = Array.from({ length: props.totalPages }, (_, i) => i + 1);
 
       return (
@@ -1149,8 +1201,8 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
                 onClick={(e) => {
                   e.preventDefault();
                   if (currentPage > 1) {
-                    setBoundValue(currentPage - 1);
-                    emit?.("change");
+                    setBoundPage(currentPage - 1);
+                    emit("change");
                   }
                 }}
               />
@@ -1162,8 +1214,8 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
                   isActive={page === currentPage}
                   onClick={(e) => {
                     e.preventDefault();
-                    setBoundValue(page);
-                    emit?.("change");
+                    setBoundPage(page);
+                    emit("change");
                   }}
                 >
                   {page}
@@ -1176,8 +1228,8 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
                 onClick={(e) => {
                   e.preventDefault();
                   if (currentPage < props.totalPages) {
-                    setBoundValue(currentPage + 1);
-                    emit?.("change");
+                    setBoundPage(currentPage + 1);
+                    emit("change");
                   }
                 }}
               />

@@ -100,10 +100,12 @@ export default function Home() {
               <p className="text-muted-foreground mb-6">
                 Components, actions, and validation functions.
               </p>
-              <Code lang="typescript">{`import { createCatalog } from '@json-render/core';
+              <Code lang="typescript">{`import { defineSchema, defineCatalog } from '@json-render/core';
 import { z } from 'zod';
 
-export const catalog = createCatalog({
+const schema = defineSchema({ /* ... */ });
+
+export const catalog = defineCatalog(schema, {
   components: {
     Card: {
       props: z.object({
@@ -115,7 +117,7 @@ export const catalog = createCatalog({
     Metric: {
       props: z.object({
         label: z.string(),
-        valuePath: z.string(),
+        statePath: z.string(),
         format: z.enum(['currency', 'percent']),
       }),
     },
@@ -144,7 +146,7 @@ export const catalog = createCatalog({
       "type": "Metric",
       "props": {
         "label": "Total Revenue",
-        "valuePath": "/metrics/revenue",
+        "statePath": "/metrics/revenue",
         "format": "currency"
       }
     }
@@ -183,7 +185,7 @@ export const catalog = createCatalog({
       "type": "Metric",
       "props": {
         "label": "Total Revenue",
-        "valuePath": "analytics/revenue",
+        "statePath": "analytics/revenue",
         "format": "currency"
       }
     },
@@ -223,7 +225,7 @@ export default function Page() {
       <Metric
         data={data}
         label="Total Revenue"
-        valuePath="analytics/revenue"
+        statePath="analytics/revenue"
         format="currency"
       />
       <Chart data={data} statePath="analytics/salesByRegion" />
@@ -266,7 +268,7 @@ export default function Page() {
               },
               {
                 title: "Data Binding",
-                desc: "Two-way state binding with dynamic prop expressions",
+                desc: "Connect props to state with $state, $item, $index, and two-way binding",
               },
               {
                 title: "Code Export",

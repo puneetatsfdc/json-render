@@ -1,8 +1,12 @@
 import { getWidgets, createWidget } from "@/lib/db/store";
 
 export async function GET() {
-  const widgetList = await getWidgets();
-  return Response.json({ data: widgetList, total: widgetList.length });
+  try {
+    const widgetList = await getWidgets();
+    return Response.json({ data: widgetList, total: widgetList.length });
+  } catch {
+    return Response.json({ data: [], total: 0 });
+  }
 }
 
 export async function POST(req: Request) {

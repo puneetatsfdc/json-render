@@ -8,12 +8,41 @@ import type {
 import {
   setByPath,
   getByPath,
-  addByPath,
   removeByPath,
   validateSpec,
   autoFixSpec,
   formatSpecIssues,
 } from "@json-render/core";
+import { useStateStore } from "./contexts/state";
+
+// =============================================================================
+// useBoundProp — Two-way binding helper for $bindState/$bindItem expressions
+// =============================================================================
+
+/**
+ * Hook for two-way bound props. Returns `[value, setValue]` where:
+ *
+ * - `value` is the already-resolved prop value (passed through from render props)
+ * - `setValue` writes back to the bound state path (no-op if not bound)
+ *
+ * @example
+ * ```tsx
+ * const [value, setValue] = useBoundProp<string>(element.props.value, bindings?.value);
+ * ```
+ */
+export function useBoundProp<T>(
+  propValue: T | undefined,
+  bindingPath: string | undefined,
+): [T | undefined, (value: T) => void] {
+  const { set } = useStateStore();
+  const setValue = useCallback(
+    (value: T) => {
+      if (bindingPath) set(bindingPath, value);
+    },
+    [bindingPath, set],
+  );
+  return [propValue, setValue];
+}
 
 /**
  * Result of attempting to parse a JSONL line.
@@ -350,8 +379,6 @@ export function useUIStream({
         signal: abortControllerRef.current!.signal,
       });
 
-      console.log("[useUIStream] response status:", response.status);
-
       if (!response.ok) {
         let errorMessage = `HTTP error: ${response.status}`;
         try {
@@ -374,33 +401,16 @@ export function useUIStream({
 
       const decoder = new TextDecoder();
       let buffer = "";
-      let chunkCount = 0;
-      let totalBytes = 0;
       let aborted = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          console.log(
-            "[useUIStream] stream done. Total chunks:",
-            chunkCount,
-            "bytes:",
-            totalBytes,
-          );
           break;
         }
 
-        chunkCount++;
-        totalBytes += value?.byteLength ?? 0;
         const decoded = decoder.decode(value, { stream: true });
         buffer += decoded;
-
-        if (chunkCount <= 5) {
-          console.log(
-            `[useUIStream] chunk #${chunkCount} (${value?.byteLength ?? 0}b):`,
-            decoded.slice(0, 200),
-          );
-        }
 
         // Process complete lines
         const lines = buffer.split("\n");
@@ -413,21 +423,13 @@ export function useUIStream({
           }
           const { patch, malformed } = parsePatchLine(line);
           if (patch) {
-            console.log("[useUIStream] applied patch:", patch.op, patch.path);
             currentSpec = applyPatch(currentSpec, patch);
             setSpec({ ...currentSpec });
           } else if (malformed) {
             // Genuinely malformed JSON (started with { but couldn't parse)
             malformedLines.push(line.trim());
-            console.warn(
-              "[useUIStream] malformed JSON line:",
-              line.trim().slice(0, 200),
-            );
 
             if (abortOnMalformed) {
-              console.warn(
-                "[useUIStream] aborting stream due to malformed JSON, will retry",
-              );
               await reader.cancel();
               aborted = true;
               break;
@@ -445,7 +447,6 @@ export function useUIStream({
 
       // Process any remaining buffer (only if stream completed naturally)
       if (!aborted && buffer.trim()) {
-        console.log("[useUIStream] remaining buffer:", buffer.slice(0, 200));
         setRawLines((prev) => [...prev, buffer]);
         const { patch, malformed } = parsePatchLine(buffer);
         if (patch) {
@@ -455,17 +456,6 @@ export function useUIStream({
           malformedLines.push(buffer.trim());
         }
       }
-
-      console.log(
-        "[useUIStream] spec state - root:",
-        currentSpec.root,
-        "elements:",
-        Object.keys(currentSpec.elements).length,
-        "completed:",
-        !aborted,
-        "malformed:",
-        malformedLines.length,
-      );
 
       return { spec: currentSpec, completed: !aborted, malformedLines };
     },
@@ -510,15 +500,9 @@ export function useUIStream({
           // ---------------------------------------------------------------
           if (!result.completed && result.malformedLines.length > 0) {
             if (retriesUsed >= maxRetries) {
-              console.warn(
-                "[useUIStream] malformed lines but max retries exhausted",
-              );
               break;
             }
             retriesUsed++;
-            console.warn(
-              `[useUIStream] mid-stream retry ${retriesUsed}/${maxRetries} due to malformed JSON`,
-            );
 
             // Build a repair prompt that asks the AI to continue from
             // the current partial spec
@@ -543,7 +527,6 @@ export function useUIStream({
           // ---------------------------------------------------------------
           const { spec: fixedSpec, fixes } = autoFixSpec(currentSpec);
           if (fixes.length > 0) {
-            console.log("[useUIStream] auto-fixed spec issues:", fixes);
             currentSpec = fixedSpec;
             setSpec({ ...currentSpec });
           }
@@ -553,7 +536,6 @@ export function useUIStream({
           // ---------------------------------------------------------------
           const validation = validateSpec(currentSpec);
           if (validation.valid) {
-            console.log("[useUIStream] spec validation passed");
             break;
           }
 
@@ -562,19 +544,11 @@ export function useUIStream({
             (i) => i.severity === "error",
           );
           if (retriesUsed >= maxRetries) {
-            console.warn(
-              "[useUIStream] spec validation failed, max retries exhausted:",
-              errors.map((e) => e.message),
-            );
             break;
           }
 
           retriesUsed++;
           const issueText = formatSpecIssues(validation.issues);
-          console.warn(
-            `[useUIStream] post-stream retry ${retriesUsed}/${maxRetries}:`,
-            errors.map((e) => e.message),
-          );
 
           currentContext = { ...context, previousSpec: currentSpec };
           currentPrompt =

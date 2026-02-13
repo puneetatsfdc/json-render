@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import type { ComponentRenderProps } from "../renderer";
 import type { ComponentRegistry } from "../renderer";
-import { useStateBinding } from "../contexts/state";
+import { useBoundProp } from "../hooks";
 
 // =============================================================================
 // Layout Components
@@ -179,8 +179,8 @@ function SpacerComponent({ element }: ComponentRenderProps) {
 function PressableComponent({ children, emit }: ComponentRenderProps) {
   return (
     <Pressable
-      onPress={() => emit?.("press")}
-      onLongPress={() => emit?.("longPress")}
+      onPress={() => emit("press")}
+      onLongPress={() => emit("longPress")}
       style={({ pressed }) => ({
         opacity: pressed ? 0.7 : 1,
       })}
@@ -436,7 +436,7 @@ function ChipComponent({ element, emit }: ComponentRenderProps) {
 
   return (
     <Pressable
-      onPress={() => emit?.("press")}
+      onPress={() => emit("press")}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -449,7 +449,7 @@ function ChipComponent({ element, emit }: ComponentRenderProps) {
     >
       <Text style={{ fontSize: 14, color: textColor }}>{p.label}</Text>
       {hasRemove && (
-        <Pressable onPress={() => emit?.("remove")} style={{ marginLeft: 4 }}>
+        <Pressable onPress={() => emit("remove")} style={{ marginLeft: 4 }}>
           <Text style={{ fontSize: 14, color: textColor, fontWeight: "700" }}>
             x
           </Text>
@@ -506,7 +506,7 @@ function ButtonComponent({ element, emit }: ComponentRenderProps) {
   return (
     <Pressable
       disabled={disabled}
-      onPress={() => emit?.("press")}
+      onPress={() => emit("press")}
       style={({ pressed }) => ({
         backgroundColor: variant.bg,
         paddingHorizontal: size.paddingH,
@@ -541,11 +541,10 @@ function ButtonComponent({ element, emit }: ComponentRenderProps) {
   );
 }
 
-function TextInputComponent({ element }: ComponentRenderProps) {
+function TextInputComponent({ element, bindings }: ComponentRenderProps) {
   const p = element.props as {
     placeholder?: string;
     value?: string;
-    statePath?: string;
     secureTextEntry?: boolean;
     keyboardType?:
       | "default"
@@ -559,11 +558,11 @@ function TextInputComponent({ element }: ComponentRenderProps) {
     flex?: number;
   };
 
-  const [boundValue, setBoundValue] = useStateBinding<string>(
-    p.statePath ?? "",
+  const [boundValue, setBoundValue] = useBoundProp<string>(
+    p.value as string | undefined,
+    bindings?.value,
   );
-  // Use bound value if statePath is set, otherwise fall back to static value
-  const displayValue = p.statePath ? (boundValue ?? "") : (p.value ?? "");
+  const displayValue = boundValue ?? "";
 
   return (
     <View style={p.flex != null ? { flex: p.flex } : undefined}>
@@ -571,7 +570,7 @@ function TextInputComponent({ element }: ComponentRenderProps) {
       <RNTextInput
         placeholder={p.placeholder ?? undefined}
         value={displayValue}
-        onChangeText={p.statePath ? setBoundValue : undefined}
+        onChangeText={bindings?.value ? setBoundValue : undefined}
         secureTextEntry={p.secureTextEntry ?? false}
         keyboardType={p.keyboardType ?? "default"}
         multiline={p.multiline ?? false}
@@ -588,24 +587,24 @@ function TextInputComponent({ element }: ComponentRenderProps) {
   );
 }
 
-function SwitchComponent({ element }: ComponentRenderProps) {
+function SwitchComponent({ element, bindings }: ComponentRenderProps) {
   const p = element.props as {
-    value?: boolean;
-    statePath?: string;
+    checked?: boolean;
     label?: string;
     disabled?: boolean;
   };
 
-  const [boundValue, setBoundValue] = useStateBinding<boolean>(
-    p.statePath ?? "",
+  const [checked, setChecked] = useBoundProp<boolean>(
+    p.checked as boolean | undefined,
+    bindings?.checked,
   );
-  const displayValue = p.statePath ? (boundValue ?? false) : (p.value ?? false);
+  const displayValue = checked ?? false;
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <RNSwitch
         value={displayValue}
-        onValueChange={p.statePath ? setBoundValue : undefined}
+        onValueChange={bindings?.checked ? setChecked : undefined}
         disabled={p.disabled ?? false}
       />
       {p.label && (
@@ -615,25 +614,25 @@ function SwitchComponent({ element }: ComponentRenderProps) {
   );
 }
 
-function CheckboxComponent({ element }: ComponentRenderProps) {
+function CheckboxComponent({ element, bindings }: ComponentRenderProps) {
   const p = element.props as {
     checked?: boolean;
-    statePath?: string;
     label?: string;
     disabled?: boolean;
   };
 
-  const [boundValue, setBoundValue] = useStateBinding<boolean>(
-    p.statePath ?? "",
+  const [checked, setChecked] = useBoundProp<boolean>(
+    p.checked as boolean | undefined,
+    bindings?.checked,
   );
-  const checked = p.statePath ? (boundValue ?? false) : (p.checked ?? false);
+  const isChecked = checked ?? false;
 
   return (
     <Pressable
       disabled={p.disabled ?? false}
       onPress={() => {
-        if (p.statePath) {
-          setBoundValue(!checked);
+        if (bindings?.checked) {
+          setChecked(!isChecked);
         }
       }}
       style={{
@@ -649,13 +648,13 @@ function CheckboxComponent({ element }: ComponentRenderProps) {
           height: 20,
           borderRadius: 4,
           borderWidth: 2,
-          borderColor: checked ? "#3b82f6" : "#d1d5db",
-          backgroundColor: checked ? "#3b82f6" : "transparent",
+          borderColor: isChecked ? "#3b82f6" : "#d1d5db",
+          backgroundColor: isChecked ? "#3b82f6" : "transparent",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        {checked && (
+        {isChecked && (
           <Text style={{ color: "#ffffff", fontSize: 12, fontWeight: "700" }}>
             {"✓"}
           </Text>
@@ -674,7 +673,6 @@ function SliderComponent({ element }: ComponentRenderProps) {
     max?: number;
     step?: number;
     value?: number;
-    statePath?: string;
     label?: string;
     color?: string;
   };
@@ -724,7 +722,6 @@ function SearchBarComponent({ element, emit }: ComponentRenderProps) {
   const p = element.props as {
     placeholder?: string;
     value?: string;
-    statePath?: string;
   };
 
   return (
@@ -744,7 +741,7 @@ function SearchBarComponent({ element, emit }: ComponentRenderProps) {
         placeholder={p.placeholder ?? "Search..."}
         value={p.value ?? undefined}
         returnKeyType="search"
-        onSubmitEditing={() => emit?.("submit")}
+        onSubmitEditing={() => emit("submit")}
         style={{
           flex: 1,
           paddingVertical: 10,
@@ -922,7 +919,7 @@ function ListItemComponent({ element, emit }: ComponentRenderProps) {
   if (hasPress) {
     return (
       <Pressable
-        onPress={() => emit?.("press")}
+        onPress={() => emit("press")}
         style={({ pressed }) => ({
           opacity: pressed ? 0.7 : 1,
           backgroundColor: pressed ? "#f9fafb" : "transparent",
@@ -941,7 +938,6 @@ function ModalComponent({ element, children }: ComponentRenderProps) {
     visible: boolean;
     title?: string;
     animationType?: "slide" | "fade" | "none";
-    statePath?: string;
   };
 
   return (
@@ -1027,9 +1023,9 @@ export function createStandardActionHandlers(options?: {
     },
 
     setData: async (params) => {
-      const path = params.path as string;
+      const statePath = params.statePath as string;
       const value = params.value;
-      options?.onSetData?.(path, value);
+      options?.onSetData?.(statePath, value);
     },
 
     refresh: async (params) => {

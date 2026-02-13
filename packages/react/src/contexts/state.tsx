@@ -10,12 +10,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import {
-  getByPath,
-  setByPath,
-  type StateModel,
-  type AuthState,
-} from "@json-render/core";
+import { getByPath, setByPath, type StateModel } from "@json-render/core";
 
 /**
  * State context value
@@ -23,8 +18,6 @@ import {
 export interface StateContextValue {
   /** The current state model */
   state: StateModel;
-  /** Auth state for visibility evaluation */
-  authState?: AuthState;
   /** Get a value by path */
   get: (path: string) => unknown;
   /** Set a value by path */
@@ -41,8 +34,6 @@ const StateContext = createContext<StateContextValue | null>(null);
 export interface StateProviderProps {
   /** Initial state model */
   initialState?: StateModel;
-  /** Auth state */
-  authState?: AuthState;
   /** Callback when state changes */
   onStateChange?: (path: string, value: unknown) => void;
   children: ReactNode;
@@ -53,11 +44,14 @@ export interface StateProviderProps {
  */
 export function StateProvider({
   initialState = {},
-  authState,
   onStateChange,
   children,
 }: StateProviderProps) {
   const [state, setStateInternal] = useState<StateModel>(initialState);
+
+  // Keep a ref to the latest state so `get` doesn't change on every update.
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Track the serialized initialState to detect actual value changes (not just reference changes)
   const initialStateJsonRef = useRef<string>(JSON.stringify(initialState));
@@ -73,7 +67,12 @@ export function StateProvider({
     }
   }, [initialState]);
 
-  const get = useCallback((path: string) => getByPath(state, path), [state]);
+  // `get` uses a ref so it never changes identity — consumers that only
+  // need `get` won't re-render on every state change.
+  const get = useCallback(
+    (path: string) => getByPath(stateRef.current, path),
+    [],
+  );
 
   const set = useCallback(
     (path: string, value: unknown) => {
@@ -82,6 +81,7 @@ export function StateProvider({
         setByPath(next, path, value);
         return next;
       });
+      // Side effect after the state update
       onStateChange?.(path, value);
     },
     [onStateChange],
@@ -89,14 +89,18 @@ export function StateProvider({
 
   const update = useCallback(
     (updates: Record<string, unknown>) => {
+      const entries = Object.entries(updates);
       setStateInternal((prev) => {
         const next = { ...prev };
-        for (const [path, value] of Object.entries(updates)) {
+        for (const [path, value] of entries) {
           setByPath(next, path, value);
-          onStateChange?.(path, value);
         }
         return next;
       });
+      // Side effects after the state update
+      for (const [path, value] of entries) {
+        onStateChange?.(path, value);
+      }
     },
     [onStateChange],
   );
@@ -104,12 +108,11 @@ export function StateProvider({
   const value = useMemo<StateContextValue>(
     () => ({
       state,
-      authState,
       get,
       set,
       update,
     }),
-    [state, authState, get, set, update],
+    [state, get, set, update],
   );
 
   return (
@@ -137,7 +140,12 @@ export function useStateValue<T>(path: string): T | undefined {
 }
 
 /**
- * Hook to get and set a value from the state model (like useState)
+ * Hook to get and set a value from the state model (like useState).
+ *
+ * @deprecated Use {@link useBoundProp} with `$bindState` expressions instead.
+ * `useStateBinding` takes a raw state path string, while `useBoundProp` works
+ * with the renderer's `bindings` map and supports both `$bindState` and
+ * `$bindItem` expressions.
  */
 export function useStateBinding<T>(
   path: string,

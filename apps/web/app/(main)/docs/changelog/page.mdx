@@ -40,7 +40,7 @@ Components now use `emit` to fire named events instead of directly dispatching a
 ```tsx
 // Component emits a named event
 Button: ({ props, emit }) => (
-  <button onClick={() => emit?.("press")}>{props.label}</button>
+  <button onClick={() => emit("press")}>{props.label}</button>
 ),
 
 // Element spec maps events to actions
@@ -53,12 +53,12 @@ Button: ({ props, emit }) => (
 
 ### New: Repeat/List Rendering
 
-Elements can now iterate over state arrays using the `repeat` field. Child elements use `$item` and `$index` tokens in `$path` expressions to reference the current item.
+Elements can now iterate over state arrays using the `repeat` field. Child elements use `{ "$item": "field" }` to read from the current item and `{ "$index": true }` for the current array index.
 
 ```json
 {
   "type": "Column",
-  "repeat": { "path": "/posts", "key": "id" },
+  "repeat": { "statePath": "/posts", "key": "id" },
   "children": ["post-card"]
 }
 ```
@@ -66,7 +66,7 @@ Elements can now iterate over state arrays using the `repeat` field. Child eleme
 ```json
 {
   "type": "Card",
-  "props": { "title": { "$path": "$item/title" } }
+  "props": { "title": { "$item": "title" } }
 }
 ```
 
@@ -94,13 +94,13 @@ Validate spec structure and auto-fix common issues:
 ```typescript
 import { validateSpec, autoFixSpec } from "@json-render/core";
 
-const { valid, issues } = validateSpec(spec, catalog);
+const { valid, issues } = validateSpec(spec);
 const fixed = autoFixSpec(spec);
 ```
 
 ### Improved: State Management
 
-`DataProvider` has been renamed to `StateProvider` with a clearer API. State is now a first-class part of specs. Elements can bind to state via `$path` expressions, and the built-in `setState` action updates state directly.
+`DataProvider` has been renamed to `StateProvider` with a clearer API. State is now a first-class part of specs. Elements can bind to state via `$state` expressions, and the built-in `setState` action updates state directly.
 
 ### Improved: AI Prompts
 

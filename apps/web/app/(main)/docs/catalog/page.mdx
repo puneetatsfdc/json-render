@@ -6,7 +6,7 @@ The catalog defines what AI can generate. It's your guardrail.
 
 ## What is a Catalog?
 
-A catalog is a schema that defines:
+A catalog is the vocabulary for your UI. While the [schema](/docs/schemas) defines the grammar (how specs are structured), the catalog defines the vocabulary (what components and actions are available). It lists:
 
 - **Components** — UI elements AI can create (with props and optional slots)
 - **Actions** — Operations AI can trigger
@@ -14,9 +14,11 @@ A catalog is a schema that defines:
 
 ## Creating a Catalog
 
+`defineCatalog` is from `@json-render/core`. The `schema` import comes from your platform package (`@json-render/react` or `@json-render/react-native`) and defines the element structure the catalog targets. The catalog definition itself is framework-agnostic.
+
 ```typescript
 import { defineCatalog } from '@json-render/core';
-import { schema } from '@json-render/react';
+import { schema } from '@json-render/react'; // or '@json-render/react-native'
 import { z } from 'zod';
 
 const catalog = defineCatalog(schema, {
@@ -35,7 +37,7 @@ const catalog = defineCatalog(schema, {
     Metric: {
       props: z.object({
         label: z.string(),
-        valuePath: z.string(), // JSON Pointer to data
+        value: z.union([z.string(), z.number()]),
         format: z.enum(['currency', 'percent', 'number']),
       }),
       description: "Display a single metric value",

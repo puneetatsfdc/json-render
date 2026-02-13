@@ -77,13 +77,13 @@ export function serializePropValue(
   }
 
   if (typeof value === "object") {
-    // Check for path reference
+    // Check for $state reference
     if (
-      "path" in value &&
-      typeof (value as { path: unknown }).path === "string"
+      "$state" in value &&
+      typeof (value as { $state: unknown }).$state === "string"
     ) {
       return {
-        value: `{ path: ${q}${escapeString((value as { path: string }).path, opts.quotes)}${q} }`,
+        value: `{ $state: ${q}${escapeString((value as { $state: string }).$state, opts.quotes)}${q} }`,
         needsBraces: true,
       };
     }

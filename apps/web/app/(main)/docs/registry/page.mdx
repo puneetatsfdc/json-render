@@ -30,8 +30,8 @@ export const { registry, handlers, executeAction } = defineRegistry(myCatalog, {
       </div>
     ),
 
-    Button: ({ props, onAction }) => (
-      <button onClick={() => onAction?.({ name: props.action })}>
+    Button: ({ props, emit }) => (
+      <button onClick={() => emit("press")}>
         {props.label}
       </button>
     ),
@@ -67,14 +67,36 @@ Each component receives a `ComponentContext` object:
 
 ```typescript
 interface ComponentContext {
-  props: T;                    // Type-safe props from your catalog
-  children?: React.ReactNode;  // Rendered children (for slot components)
-  onAction?: (action: ActionTrigger) => void;  // Dispatch an action
-  loading?: boolean;           // Whether the renderer is in a loading state
+  props: T;                                // Type-safe props from your catalog
+  children?: React.ReactNode;              // Rendered children (for slot components)
+  emit: (event: string) => void;           // Emit a named event (e.g. "press")
+  loading?: boolean;                       // Whether the renderer is in a loading state
+  bindings?: Record<string, string>;       // State paths from $bindState/$bindItem expressions
 }
 ```
 
 Props are automatically inferred from your catalog, so `props.title` is typed as `string` if your catalog defines it that way.
+
+#### Using `bindings` for two-way binding
+
+When a spec uses `{ "$bindState": "/path" }` or `{ "$bindItem": "field" }` on a prop, the renderer resolves the **value** into `props` and provides the **write-back path** in `bindings`. Use the `useBoundProp` hook to wire both together:
+
+```tsx
+import { useBoundProp, defineRegistry } from '@json-render/react';
+
+// Inside your registry:
+TextInput: ({ props, bindings }) => {
+  const [value, setValue] = useBoundProp<string>(props.value, bindings?.value);
+  return (
+    <input
+      value={value ?? ""}
+      onChange={(e) => setValue(e.target.value)}
+    />
+  );
+},
+```
+
+`useBoundProp` returns `[resolvedValue, setter]`. The setter writes to the bound state path. If no binding exists (the prop is a literal), the setter is a no-op.
 
 ### Action Handlers
 
@@ -110,7 +132,7 @@ const catalog = defineCatalog(schema, {
 });
 ```
 
-Action handlers receive `(params, setState, data)` and are defined inside `defineRegistry`:
+Action handlers receive `(params, setState, state)` and are defined inside `defineRegistry`:
 
 ```tsx
 export const { handlers, executeAction } = defineRegistry(catalog, {
@@ -138,39 +160,31 @@ export const { handlers, executeAction } = defineRegistry(catalog, {
 
 ### Data Binding
 
-Use hooks inside your registry components to read and write data:
+Most data binding is handled automatically by the renderer — `$state`, `$item`, and `$index` expressions in props are resolved before your component receives them. See the [Data Binding](/docs/data-binding) guide for the full reference.
+
+For two-way binding (form inputs), use `{ "$bindState": "/path" }` on the natural value prop (or `{ "$bindItem": "field" }` inside repeat scopes). The renderer provides a `bindings` map with the state path for each bound prop. Use `useBoundProp` to get `[value, setValue]`:
 
 ```tsx
-import { useStateStore } from '@json-render/react';
-import { getByPath } from '@json-render/core';
+import { useBoundProp } from '@json-render/react';
 
 // Inside defineRegistry components:
 
-Metric: ({ props }) => {
-  const { data } = useStateStore();
-  const value = getByPath(data, props.valuePath);
-
-  return (
-    <div className="metric">
-      <span className="label">{props.label}</span>
-      <span className="value">{formatValue(value)}</span>
-    </div>
+Input: ({ props, bindings }) => {
+  const [value, setValue] = useBoundProp<string>(
+    props.value,
+    bindings?.value
   );
-},
-
-TextField: ({ props }) => {
-  const { data, set } = useStateStore();
-  const value = getByPath(data, props.valuePath) as string;
-
   return (
     <input
-      value={value || ''}
-      onChange={(e) => set(props.valuePath, e.target.value)}
+      value={value ?? ''}
+      onChange={(e) => setValue(e.target.value)}
       placeholder={props.placeholder}
     />
   );
 },
 ```
+
+For read-only state access (e.g. displaying a value from state), use `$state` expressions in props — they are resolved before the component receives them. For custom logic, use `useStateStore` and `getByPath` from `@json-render/core`.
 
 ### Using the Renderer
 
@@ -186,19 +200,19 @@ import {
 } from '@json-render/react';
 import { registry, handlers } from './registry';
 
-function App({ spec, data, setState }) {
-  const dataRef = useRef(data);
+function App({ spec, state, setState }) {
+  const stateRef = useRef(state);
   const setStateRef = useRef(setState);
-  dataRef.current = data;
+  stateRef.current = state;
   setStateRef.current = setState;
 
   const actionHandlers = useMemo(
-    () => handlers(() => setStateRef.current, () => dataRef.current),
+    () => handlers(() => setStateRef.current, () => stateRef.current),
     [],
   );
 
   return (
-    <StateProvider initialState={data}>
+    <StateProvider initialState={state}>
       <VisibilityProvider>
         <ActionProvider handlers={actionHandlers}>
           <Renderer spec={spec} registry={registry} />
@@ -227,7 +241,7 @@ export const { registry } = defineRegistry(catalog, {
     ),
 
     Button: ({ props, emit }) => (
-      <Pressable onPress={() => emit?.("press")}>
+      <Pressable onPress={() => emit("press")}>
         <Text>{props.label}</Text>
       </Pressable>
     ),

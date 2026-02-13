@@ -2,9 +2,12 @@ import { z } from "zod";
 import type { ActionBinding } from "./actions";
 
 /**
- * Dynamic value - can be a literal or a path reference to state model
+ * Dynamic value - can be a literal or a `{ $state }` reference to the state model.
+ *
+ * Used in action params and validation args where values can either be
+ * hardcoded or resolved from state at runtime.
  */
-export type DynamicValue<T = unknown> = T | { path: string };
+export type DynamicValue<T = unknown> = T | { $state: string };
 
 /**
  * Dynamic string value
@@ -29,22 +32,22 @@ export const DynamicValueSchema = z.union([
   z.number(),
   z.boolean(),
   z.null(),
-  z.object({ path: z.string() }),
+  z.object({ $state: z.string() }),
 ]);
 
 export const DynamicStringSchema = z.union([
   z.string(),
-  z.object({ path: z.string() }),
+  z.object({ $state: z.string() }),
 ]);
 
 export const DynamicNumberSchema = z.union([
   z.number(),
-  z.object({ path: z.string() }),
+  z.object({ $state: z.string() }),
 ]);
 
 export const DynamicBooleanSchema = z.union([
   z.boolean(),
-  z.object({ path: z.string() }),
+  z.object({ $state: z.string() }),
 ]);
 
 /**
@@ -65,7 +68,7 @@ export interface UIElement<
   /** Event bindings — maps event names to action bindings */
   on?: Record<string, ActionBinding | ActionBinding[]>;
   /** Repeat children once per item in a state array */
-  repeat?: { path: string; key?: string };
+  repeat?: { statePath: string; key?: string };
 }
 
 /**
@@ -84,28 +87,78 @@ export interface FlatElement<
 }
 
 /**
- * Visibility condition types
+ * Shared comparison operators for visibility conditions.
+ *
+ * Use at most ONE comparison operator per condition. If multiple are
+ * provided, only the first matching one is evaluated (precedence:
+ * eq > neq > gt > gte > lt > lte). With no operator, truthiness is checked.
+ *
+ * `not` inverts the final result of whichever operator (or truthiness
+ * check) is used.
+ */
+type ComparisonOperators = {
+  eq?: unknown;
+  neq?: unknown;
+  gt?: number | { $state: string };
+  gte?: number | { $state: string };
+  lt?: number | { $state: string };
+  lte?: number | { $state: string };
+  not?: true;
+};
+
+/**
+ * A single state-based condition.
+ * Resolves `$state` to a value from the state model, then applies the operator.
+ * Without an operator, checks truthiness.
+ *
+ * When `not` is `true`, the result of the entire condition is inverted.
+ * For example `{ $state: "/count", gt: 5, not: true }` means "NOT greater than 5".
+ */
+export type StateCondition = { $state: string } & ComparisonOperators;
+
+/**
+ * A condition that resolves `$item` to a field on the current repeat item.
+ * Only meaningful inside a `repeat` scope.
+ *
+ * Use `""` to reference the whole item, or `"field"` for a specific field.
+ */
+export type ItemCondition = { $item: string } & ComparisonOperators;
+
+/**
+ * A condition that resolves `$index` to the current repeat array index.
+ * Only meaningful inside a `repeat` scope.
+ */
+export type IndexCondition = { $index: true } & ComparisonOperators;
+
+/** A single visibility condition (state, item, or index). */
+export type SingleCondition = StateCondition | ItemCondition | IndexCondition;
+
+/**
+ * AND wrapper — all child conditions must be true.
+ * This is the explicit form of the implicit array AND (`SingleCondition[]`).
+ * Unlike the implicit form, `$and` supports nested `$or` and `$and` conditions.
+ */
+export type AndCondition = { $and: VisibilityCondition[] };
+
+/**
+ * OR wrapper — at least one child condition must be true.
+ */
+export type OrCondition = { $or: VisibilityCondition[] };
+
+/**
+ * Visibility condition types.
+ * - `boolean` — always/never
+ * - `SingleCondition` — single condition (`$state`, `$item`, or `$index`)
+ * - `SingleCondition[]` — implicit AND (all must be true)
+ * - `AndCondition` — `{ $and: [...] }`, explicit AND (all must be true)
+ * - `OrCondition` — `{ $or: [...] }`, at least one must be true
  */
 export type VisibilityCondition =
   | boolean
-  | { path: string }
-  | { auth: "signedIn" | "signedOut" }
-  | LogicExpression;
-
-/**
- * Logic expression for complex conditions
- */
-export type LogicExpression =
-  | { and: LogicExpression[] }
-  | { or: LogicExpression[] }
-  | { not: LogicExpression }
-  | { path: string }
-  | { eq: [DynamicValue, DynamicValue] }
-  | { neq: [DynamicValue, DynamicValue] }
-  | { gt: [DynamicValue<number>, DynamicValue<number>] }
-  | { gte: [DynamicValue<number>, DynamicValue<number>] }
-  | { lt: [DynamicValue<number>, DynamicValue<number>] }
-  | { lte: [DynamicValue<number>, DynamicValue<number>] };
+  | SingleCondition
+  | SingleCondition[]
+  | AndCondition
+  | OrCondition;
 
 /**
  * Flat UI tree structure (optimized for LLM generation)
@@ -118,14 +171,6 @@ export interface Spec {
   /** Optional initial state to seed the state model.
    *  Components using statePath will read from / write to this state. */
   state?: Record<string, unknown>;
-}
-
-/**
- * Auth state for visibility evaluation
- */
-export interface AuthState {
-  isSignedIn: boolean;
-  user?: Record<string, unknown>;
 }
 
 /**
@@ -171,8 +216,10 @@ export function resolveDynamicValue<T>(
     return undefined;
   }
 
-  if (typeof value === "object" && "path" in value) {
-    return getByPath(stateModel, value.path) as T | undefined;
+  if (typeof value === "object" && "$state" in value) {
+    return getByPath(stateModel, (value as { $state: string }).$state) as
+      | T
+      | undefined;
   }
 
   return value as T;
@@ -395,27 +442,27 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Find a form value from params and/or data.
+ * Find a form value from params and/or state.
  * Useful in action handlers to locate form input values regardless of path format.
  *
  * Checks in order:
  * 1. Direct param key (if not a path reference)
  * 2. Param keys ending with the field name
- * 3. Data keys ending with the field name (dot notation)
- * 4. Data paths using getByPath (slash notation)
+ * 3. State keys ending with the field name (dot notation)
+ * 4. State path using getByPath (slash notation)
  *
  * @example
- * // Find "name" from params or data
- * const name = findFormValue("name", params, data);
+ * // Find "name" from params or state
+ * const name = findFormValue("name", params, state);
  *
- * // Will find from: params.name, params["form.name"], data["customerForm.name"], data.customerForm.name
+ * // Will find from: params.name, params["form.name"], state["form.name"], or getByPath(state, "name")
  */
 export function findFormValue(
   fieldName: string,
   params?: Record<string, unknown>,
-  data?: Record<string, unknown>,
+  state?: Record<string, unknown>,
 ): unknown {
-  // Check params first (but not if it looks like a data path reference)
+  // Check params first (but not if it looks like a state path reference)
   if (params?.[fieldName] !== undefined) {
     const val = params[fieldName];
     // If the value looks like a path reference (contains dots), skip it
@@ -436,22 +483,18 @@ export function findFormValue(
     }
   }
 
-  // Check data keys that end with the field name (handles any form naming)
-  if (data) {
-    for (const key of Object.keys(data)) {
+  // Check state keys that end with the field name (handles any form naming)
+  if (state) {
+    for (const key of Object.keys(state)) {
       if (key === fieldName || key.endsWith(`.${fieldName}`)) {
-        return data[key];
+        return state[key];
       }
     }
 
-    // Try getByPath with common prefixes
-    const prefixes = ["form", "newCustomer", "customer", ""];
-    for (const prefix of prefixes) {
-      const path = prefix ? `${prefix}/${fieldName}` : fieldName;
-      const val = getByPath(data, path);
-      if (val !== undefined) {
-        return val;
-      }
+    // Try getByPath with the raw field name
+    const val = getByPath(state, fieldName);
+    if (val !== undefined) {
+      return val;
     }
   }
 
@@ -536,6 +579,127 @@ export function applySpecStreamPatch<T extends Record<string, unknown>>(
     }
   }
   return obj;
+}
+
+/**
+ * Apply a single RFC 6902 JSON Patch operation to a Spec.
+ * Mutates the spec in place and returns it.
+ *
+ * This is a typed convenience wrapper around `applySpecStreamPatch` that
+ * accepts a `Spec` directly without requiring a cast to `Record<string, unknown>`.
+ *
+ * Note: This mutates the spec. For React state updates, spread the result
+ * to create a new reference: `setSpec({ ...applySpecPatch(spec, patch) })`.
+ *
+ * @example
+ * let spec: Spec = { root: "", elements: {} };
+ * applySpecPatch(spec, { op: "add", path: "/root", value: "main" });
+ */
+export function applySpecPatch(spec: Spec, patch: SpecStreamLine): Spec {
+  applySpecStreamPatch(spec as unknown as Record<string, unknown>, patch);
+  return spec;
+}
+
+// =============================================================================
+// Nested-to-Flat Conversion
+// =============================================================================
+
+/**
+ * A nested spec node. This is the tree format that humans naturally write —
+ * each node has inline `children` as an array of child node objects rather
+ * than string keys.
+ */
+interface NestedNode {
+  type: string;
+  props: Record<string, unknown>;
+  children?: NestedNode[];
+  /** Any other top-level fields (visible, on, repeat, etc.) */
+  [key: string]: unknown;
+}
+
+/**
+ * Convert a nested (tree-structured) spec into the flat `Spec` format used
+ * by json-render renderers.
+ *
+ * In the nested format each node has inline `children` as an array of child
+ * objects. This function walks the tree, assigns auto-generated keys
+ * (`el-0`, `el-1`, ...), and produces a flat `{ root, elements, state }` spec.
+ *
+ * The top-level `state` field (if present on the root node) is hoisted to
+ * `spec.state`.
+ *
+ * @example
+ * ```ts
+ * const nested = {
+ *   type: "Card",
+ *   props: { title: "Hello" },
+ *   children: [
+ *     { type: "Text", props: { content: "World" } },
+ *   ],
+ *   state: { count: 0 },
+ * };
+ * const spec = nestedToFlat(nested);
+ * // {
+ * //   root: "el-0",
+ * //   elements: {
+ * //     "el-0": { type: "Card", props: { title: "Hello" }, children: ["el-1"] },
+ * //     "el-1": { type: "Text", props: { content: "World" }, children: [] },
+ * //   },
+ * //   state: { count: 0 },
+ * // }
+ * ```
+ */
+export function nestedToFlat(nested: Record<string, unknown>): Spec {
+  const elements: Record<string, UIElement> = {};
+  let counter = 0;
+
+  function walk(node: Record<string, unknown>): string {
+    const key = `el-${counter++}`;
+    const { type, props, children: rawChildren, ...rest } = node as NestedNode;
+
+    // Recursively flatten children
+    const childKeys: string[] = [];
+    if (Array.isArray(rawChildren)) {
+      for (const child of rawChildren) {
+        if (child && typeof child === "object" && "type" in child) {
+          childKeys.push(walk(child as Record<string, unknown>));
+        }
+      }
+    }
+
+    // Build the flat element, preserving extra fields (visible, on, repeat, etc.)
+    // but excluding `state` which is hoisted to spec-level.
+    const element: UIElement = {
+      type: type ?? "unknown",
+      props: (props as Record<string, unknown>) ?? {},
+      children: childKeys,
+    };
+
+    // Copy extra fields (visible, on, repeat) but not state
+    for (const [k, v] of Object.entries(rest)) {
+      if (k !== "state" && v !== undefined) {
+        (element as unknown as Record<string, unknown>)[k] = v;
+      }
+    }
+
+    elements[key] = element;
+    return key;
+  }
+
+  const root = walk(nested);
+
+  const spec: Spec = { root, elements };
+
+  // Hoist state from root node if present
+  if (
+    nested.state &&
+    typeof nested.state === "object" &&
+    !Array.isArray(nested.state)
+  ) {
+    spec.state = nested.state as Record<string, unknown>;
+  }
+
+  return spec;
 }
 
 /**
@@ -676,4 +840,412 @@ export function createSpecStreamCompiler<T = Record<string, unknown>>(
       processedLines.clear();
     },
   };
+}
+
+// =============================================================================
+// Mixed Stream Parser — for chat + GenUI (text interleaved with JSONL patches)
+// =============================================================================
+
+/**
+ * Callbacks for the mixed stream parser.
+ */
+export interface MixedStreamCallbacks {
+  /** Called when a JSONL patch line is parsed */
+  onPatch: (patch: SpecStreamLine) => void;
+  /** Called when a text (non-JSONL) line is received */
+  onText: (text: string) => void;
+}
+
+/**
+ * A stateful parser for mixed streams that contain both text and JSONL patches.
+ * Used in chat + GenUI scenarios where an LLM responds with conversational text
+ * interleaved with json-render JSONL patch operations.
+ */
+export interface MixedStreamParser {
+  /** Push a chunk of streamed data. Calls onPatch/onText for each complete line. */
+  push(chunk: string): void;
+  /** Flush any remaining buffered content. Call when the stream ends. */
+  flush(): void;
+}
+
+/**
+ * Create a parser for mixed text + JSONL streams.
+ *
+ * In chat + GenUI scenarios, an LLM streams a response that contains both
+ * conversational text and json-render JSONL patch lines. This parser buffers
+ * incoming chunks, splits them into lines, and classifies each line as either
+ * a JSONL patch (via `parseSpecStreamLine`) or plain text.
+ *
+ * @example
+ * const parser = createMixedStreamParser({
+ *   onText: (text) => appendToMessage(text),
+ *   onPatch: (patch) => applySpecPatch(spec, patch),
+ * });
+ *
+ * // As chunks arrive from the stream:
+ * for await (const chunk of stream) {
+ *   parser.push(chunk);
+ * }
+ * parser.flush();
+ */
+export function createMixedStreamParser(
+  callbacks: MixedStreamCallbacks,
+): MixedStreamParser {
+  let buffer = "";
+  let inSpecFence = false;
+
+  function processLine(line: string): void {
+    const trimmed = line.trim();
+
+    // Fence detection
+    if (!inSpecFence && trimmed.startsWith("```spec")) {
+      inSpecFence = true;
+      return;
+    }
+    if (inSpecFence && trimmed === "```") {
+      inSpecFence = false;
+      return;
+    }
+
+    if (!trimmed) return;
+
+    if (inSpecFence) {
+      const patch = parseSpecStreamLine(trimmed);
+      if (patch) {
+        callbacks.onPatch(patch);
+      }
+      return;
+    }
+
+    // Outside fence: heuristic mode
+    const patch = parseSpecStreamLine(trimmed);
+    if (patch) {
+      callbacks.onPatch(patch);
+    } else {
+      callbacks.onText(line);
+    }
+  }
+
+  return {
+    push(chunk: string): void {
+      buffer += chunk;
+
+      // Process complete lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        processLine(line);
+      }
+    },
+
+    flush(): void {
+      if (buffer.trim()) {
+        processLine(buffer);
+      }
+      buffer = "";
+    },
+  };
+}
+
+// =============================================================================
+// AI SDK Stream Transform
+// =============================================================================
+
+/**
+ * Minimal chunk shape compatible with the AI SDK's `UIMessageChunk`.
+ *
+ * Defined here so that `@json-render/core` has no dependency on the `ai`
+ * package. The discriminated union covers the three text-related chunk types
+ * the transform inspects; all other chunk types pass through via the fallback.
+ */
+export type StreamChunk =
+  | { type: "text-start"; id: string; [k: string]: unknown }
+  | { type: "text-delta"; id: string; delta: string; [k: string]: unknown }
+  | { type: "text-end"; id: string; [k: string]: unknown }
+  | { type: string; [k: string]: unknown };
+
+/** The opening fence for a spec block (e.g. ` ```spec `). */
+const SPEC_FENCE_OPEN = "```spec";
+/** The closing fence for a spec block. */
+const SPEC_FENCE_CLOSE = "```";
+
+/**
+ * Creates a `TransformStream` that intercepts AI SDK UI message stream chunks
+ * and classifies text content as either prose or json-render JSONL patches.
+ *
+ * Two classification modes:
+ *
+ * 1. **Fence mode** (preferred): Lines between ` ```spec ` and ` ``` ` are
+ *    parsed as JSONL patches. Fence delimiters are swallowed (not emitted).
+ * 2. **Heuristic mode** (backward compat): Outside of fences, lines starting
+ *    with `{` are buffered and tested with `parseSpecStreamLine`. Valid patches
+ *    are emitted as {@link SPEC_DATA_PART_TYPE} parts; everything else is
+ *    flushed as text.
+ *
+ * Non-text chunks (tool events, step markers, etc.) are passed through unchanged.
+ *
+ * @example
+ * ```ts
+ * import { createJsonRenderTransform } from "@json-render/core";
+ * import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+ *
+ * const stream = createUIMessageStream({
+ *   execute: async ({ writer }) => {
+ *     writer.merge(
+ *       result.toUIMessageStream().pipeThrough(createJsonRenderTransform()),
+ *     );
+ *   },
+ * });
+ * return createUIMessageStreamResponse({ stream });
+ * ```
+ */
+export function createJsonRenderTransform(): TransformStream<
+  StreamChunk,
+  StreamChunk
+> {
+  let lineBuffer = "";
+  let currentTextId = "";
+  // Whether the current incomplete line might be JSONL (starts with '{')
+  let buffering = false;
+  // Whether we are inside a ```spec fence
+  let inSpecFence = false;
+
+  function emitPatch(
+    patch: SpecStreamLine,
+    controller: TransformStreamDefaultController<StreamChunk>,
+  ) {
+    controller.enqueue({
+      type: SPEC_DATA_PART_TYPE,
+      data: { type: "patch", patch },
+    });
+  }
+
+  function flushBuffer(
+    controller: TransformStreamDefaultController<StreamChunk>,
+  ) {
+    if (!lineBuffer) return;
+
+    const trimmed = lineBuffer.trim();
+
+    // Inside a fence, everything is spec data
+    if (inSpecFence) {
+      if (trimmed) {
+        const patch = parseSpecStreamLine(trimmed);
+        if (patch) emitPatch(patch, controller);
+        // Non-patch lines inside the fence are silently dropped
+      }
+      lineBuffer = "";
+      buffering = false;
+      return;
+    }
+
+    if (trimmed) {
+      const patch = parseSpecStreamLine(trimmed);
+      if (patch) {
+        emitPatch(patch, controller);
+      } else {
+        // Was buffered but isn't JSONL — flush as text
+        controller.enqueue({
+          type: "text-delta",
+          id: currentTextId,
+          delta: lineBuffer,
+        });
+      }
+    } else {
+      // Whitespace-only buffer — forward as-is (preserves blank lines)
+      controller.enqueue({
+        type: "text-delta",
+        id: currentTextId,
+        delta: lineBuffer,
+      });
+    }
+    lineBuffer = "";
+    buffering = false;
+  }
+
+  function processCompleteLine(
+    line: string,
+    controller: TransformStreamDefaultController<StreamChunk>,
+  ) {
+    const trimmed = line.trim();
+
+    // --- Fence detection ---
+    if (!inSpecFence && trimmed.startsWith(SPEC_FENCE_OPEN)) {
+      inSpecFence = true;
+      return; // Swallow the opening fence
+    }
+    if (inSpecFence && trimmed === SPEC_FENCE_CLOSE) {
+      inSpecFence = false;
+      return; // Swallow the closing fence
+    }
+
+    // Inside a fence: parse as spec data
+    if (inSpecFence) {
+      if (trimmed) {
+        const patch = parseSpecStreamLine(trimmed);
+        if (patch) emitPatch(patch, controller);
+      }
+      return;
+    }
+
+    // --- Outside fence: heuristic mode ---
+    if (!trimmed) {
+      // Empty line — forward for markdown paragraph breaks
+      controller.enqueue({
+        type: "text-delta",
+        id: currentTextId,
+        delta: "\n",
+      });
+      return;
+    }
+
+    const patch = parseSpecStreamLine(trimmed);
+    if (patch) {
+      emitPatch(patch, controller);
+    } else {
+      controller.enqueue({
+        type: "text-delta",
+        id: currentTextId,
+        delta: line + "\n",
+      });
+    }
+  }
+
+  return new TransformStream<StreamChunk, StreamChunk>({
+    transform(chunk, controller) {
+      switch (chunk.type) {
+        case "text-start": {
+          currentTextId = (chunk as { id: string }).id;
+          controller.enqueue(chunk);
+          break;
+        }
+
+        case "text-delta": {
+          const delta = chunk as { id: string; delta: string };
+          currentTextId = delta.id;
+          const text = delta.delta;
+
+          for (let i = 0; i < text.length; i++) {
+            const ch = text.charAt(i);
+
+            if (ch === "\n") {
+              // Line complete — classify and emit
+              if (buffering) {
+                processCompleteLine(lineBuffer, controller);
+                lineBuffer = "";
+                buffering = false;
+              } else {
+                // Outside fence, emit newline; inside fence, swallow it
+                if (!inSpecFence) {
+                  controller.enqueue({
+                    type: "text-delta",
+                    id: currentTextId,
+                    delta: "\n",
+                  });
+                }
+              }
+            } else if (lineBuffer.length === 0 && !buffering) {
+              // Start of a new line — decide whether to buffer or stream
+              if (inSpecFence || ch === "{" || ch === "`") {
+                // Buffer: inside fence (everything), or heuristic mode ({), or potential fence (`)
+                buffering = true;
+                lineBuffer += ch;
+              } else {
+                controller.enqueue({
+                  type: "text-delta",
+                  id: currentTextId,
+                  delta: ch,
+                });
+              }
+            } else if (buffering) {
+              lineBuffer += ch;
+            } else {
+              controller.enqueue({
+                type: "text-delta",
+                id: currentTextId,
+                delta: ch,
+              });
+            }
+          }
+          break;
+        }
+
+        case "text-end": {
+          flushBuffer(controller);
+          controller.enqueue(chunk);
+          break;
+        }
+
+        default: {
+          controller.enqueue(chunk);
+          break;
+        }
+      }
+    },
+
+    flush(controller) {
+      flushBuffer(controller);
+    },
+  });
+}
+
+/**
+ * The key registered in `AppDataParts` for json-render specs.
+ * The AI SDK automatically prefixes this with `"data-"` on the wire,
+ * so the actual stream chunk type is `"data-spec"` (see {@link SPEC_DATA_PART_TYPE}).
+ *
+ * @example
+ * ```ts
+ * import { SPEC_DATA_PART, type SpecDataPart } from "@json-render/core";
+ * type AppDataParts = { [SPEC_DATA_PART]: SpecDataPart };
+ * ```
+ */
+export const SPEC_DATA_PART = "spec" as const;
+
+/**
+ * The wire-format type string as it appears in stream chunks and message parts.
+ * This is `"data-"` + {@link SPEC_DATA_PART} — i.e. `"data-spec"`.
+ *
+ * Use this constant when filtering message parts or enqueuing stream chunks.
+ */
+export const SPEC_DATA_PART_TYPE = `data-${SPEC_DATA_PART}` as const;
+
+/**
+ * Discriminated union for the payload of a {@link SPEC_DATA_PART_TYPE} SSE part.
+ *
+ * - `"patch"`: A single RFC 6902 JSON Patch operation (streaming, progressive UI).
+ * - `"flat"`: A complete flat spec with `root`, `elements`, and optional `state`.
+ * - `"nested"`: A complete nested spec (tree structure — schema depends on catalog).
+ */
+export type SpecDataPart =
+  | { type: "patch"; patch: JsonPatch }
+  | { type: "flat"; spec: Spec }
+  | { type: "nested"; spec: Record<string, unknown> };
+
+/**
+ * Convenience wrapper that pipes an AI SDK UI message stream through the
+ * json-render transform, classifying text as prose or JSONL patches.
+ *
+ * Eliminates the need for manual `pipeThrough(createJsonRenderTransform())`
+ * and the associated type cast.
+ *
+ * @example
+ * ```ts
+ * import { pipeJsonRender } from "@json-render/core";
+ *
+ * const stream = createUIMessageStream({
+ *   execute: async ({ writer }) => {
+ *     writer.merge(pipeJsonRender(result.toUIMessageStream()));
+ *   },
+ * });
+ * return createUIMessageStreamResponse({ stream });
+ * ```
+ */
+export function pipeJsonRender<T = StreamChunk>(
+  stream: ReadableStream<T>,
+): ReadableStream<T> {
+  return stream.pipeThrough(
+    createJsonRenderTransform() as unknown as TransformStream<T, T>,
+  );
 }

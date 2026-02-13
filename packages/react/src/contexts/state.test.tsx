@@ -30,21 +30,6 @@ describe("StateProvider", () => {
 
     expect(result.current.state).toEqual({});
   });
-
-  it("provides auth state to children", () => {
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <StateProvider authState={{ isSignedIn: true, user: { id: "123" } }}>
-        {children}
-      </StateProvider>
-    );
-
-    const { result } = renderHook(() => useStateStore(), { wrapper });
-
-    expect(result.current.authState).toEqual({
-      isSignedIn: true,
-      user: { id: "123" },
-    });
-  });
 });
 
 describe("useStateStore", () => {

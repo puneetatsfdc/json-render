@@ -5,7 +5,10 @@ import type {
   InferCatalogActions,
   InferComponentProps,
   InferActionParams,
+  StateModel,
 } from "@json-render/core";
+
+export type { StateModel };
 
 // =============================================================================
 // State Types
@@ -18,11 +21,6 @@ export type SetState = (
   updater: (prev: Record<string, unknown>) => Record<string, unknown>,
 ) => void;
 
-/**
- * State model type (generic record)
- */
-export type StateModel = Record<string, unknown>;
-
 // =============================================================================
 // Component Types
 // =============================================================================
@@ -31,7 +29,7 @@ export type StateModel = Record<string, unknown>;
  * Context passed to component render functions
  * @example
  * const Button: ComponentFn<typeof catalog, 'Button'> = (ctx) => {
- *   return <button onClick={() => ctx.emit?.("press")}>{ctx.props.label}</button>
+ *   return <button onClick={() => ctx.emit("press")}>{ctx.props.label}</button>
  * }
  */
 export interface ComponentContext<
@@ -41,7 +39,12 @@ export interface ComponentContext<
   props: InferComponentProps<C, K>;
   children?: ReactNode;
   /** Emit a named event. The renderer resolves the event to an action binding from the element's `on` field. */
-  emit?: (event: string) => void;
+  emit: (event: string) => void;
+  /**
+   * Two-way binding paths resolved from `$bindState` / `$bindItem` expressions.
+   * Maps prop name → absolute state path for write-back.
+   */
+  bindings?: Record<string, string>;
   loading?: boolean;
 }
 
@@ -49,7 +52,7 @@ export interface ComponentContext<
  * Component render function type for React
  * @example
  * const Button: ComponentFn<typeof catalog, 'Button'> = ({ props, emit }) => (
- *   <button onClick={() => emit?.("press")}>{props.label}</button>
+ *   <button onClick={() => emit("press")}>{props.label}</button>
  * );
  */
 export type ComponentFn<

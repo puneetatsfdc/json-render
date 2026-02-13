@@ -65,7 +65,8 @@ A2UI uses an adjacency list model - a flat list of components with ID references
 ## Define the A2UI Catalog
 
 ```typescript
-import { createCatalog } from '@json-render/core';
+import { defineCatalog } from '@json-render/core';
+import { schema } from '@json-render/react';
 import { z } from 'zod';
 
 // A2UI BoundValue schema
@@ -83,7 +84,7 @@ const Children = z.object({
   }).optional(),
 }).refine(d => d.explicitList || d.template);
 
-export const a2uiCatalog = createCatalog({
+export const a2uiCatalog = defineCatalog(schema, {
   components: {
     Text: {
       description: 'Displays text content',

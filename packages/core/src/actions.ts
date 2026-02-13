@@ -33,7 +33,7 @@ export type ActionOnError =
  *
  * Used inside the `on` field of a UIElement:
  * ```json
- * { "on": { "press": { "action": "setState", "params": { "path": "/x", "value": 1 } } } }
+ * { "on": { "press": { "action": "setState", "params": { "statePath": "/x", "value": 1 } } } }
  * ```
  */
 export interface ActionBinding {
@@ -169,7 +169,7 @@ export function interpolateString(
   stateModel: StateModel,
 ): string {
   return template.replace(/\$\{([^}]+)\}/g, (_, path) => {
-    const value = resolveDynamicValue({ path }, stateModel);
+    const value = resolveDynamicValue({ $state: path }, stateModel);
     return String(value ?? "");
   });
 }

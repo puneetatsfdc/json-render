@@ -8,8 +8,12 @@ export type {
   FlatElement,
   Spec,
   VisibilityCondition,
-  LogicExpression,
-  AuthState,
+  StateCondition,
+  ItemCondition,
+  IndexCondition,
+  SingleCondition,
+  AndCondition,
+  OrCondition,
   StateModel,
   ComponentSchema,
   ValidationMode,
@@ -18,6 +22,12 @@ export type {
   // SpecStream types
   SpecStreamLine,
   SpecStreamCompiler,
+  // Mixed stream types (chat + GenUI)
+  MixedStreamCallbacks,
+  MixedStreamParser,
+  // AI SDK stream transform
+  StreamChunk,
+  SpecDataPart,
 } from "./types";
 
 export {
@@ -34,8 +44,17 @@ export {
   // SpecStream - streaming format for building specs (RFC 6902)
   parseSpecStreamLine,
   applySpecStreamPatch,
+  applySpecPatch,
+  nestedToFlat,
   compileSpecStream,
   createSpecStreamCompiler,
+  // Mixed stream parser (chat + GenUI)
+  createMixedStreamParser,
+  // AI SDK stream transform
+  createJsonRenderTransform,
+  pipeJsonRender,
+  SPEC_DATA_PART,
+  SPEC_DATA_PART_TYPE,
 } from "./types";
 
 // Visibility
@@ -43,16 +62,19 @@ export type { VisibilityContext } from "./visibility";
 
 export {
   VisibilityConditionSchema,
-  LogicExpressionSchema,
   evaluateVisibility,
-  evaluateLogicExpression,
   visibility,
 } from "./visibility";
 
 // Prop Expressions
-export type { PropExpression } from "./props";
+export type { PropExpression, PropResolutionContext } from "./props";
 
-export { resolvePropValue, resolveElementProps } from "./props";
+export {
+  resolvePropValue,
+  resolveElementProps,
+  resolveBindings,
+  resolveActionParam,
+} from "./props";
 
 // Actions
 export type {
@@ -113,45 +135,35 @@ export type {
 
 export { validateSpec, autoFixSpec, formatSpecIssues } from "./spec-validator";
 
-// Schema (new API)
+// Schema — defines the grammar (how specs and catalogs are structured)
 export type {
   SchemaBuilder,
   SchemaType,
   SchemaDefinition,
   Schema,
+  PromptTemplate,
+  SchemaOptions,
+} from "./schema";
+
+export { defineSchema } from "./schema";
+
+// Catalog — defines the vocabulary (what components and actions are available)
+export type {
   Catalog,
   PromptOptions,
   PromptContext,
-  PromptTemplate,
-  SchemaOptions,
   SpecValidationResult,
   InferCatalogInput,
   InferSpec,
-  // Catalog type inference
   InferCatalogComponents,
   InferCatalogActions,
   InferComponentProps,
   InferActionParams,
 } from "./schema";
 
-export { defineSchema, defineCatalog } from "./schema";
+export { defineCatalog } from "./schema";
 
 // User Prompt Builder
 export type { UserPromptOptions } from "./prompt";
 
 export { buildUserPrompt } from "./prompt";
-
-// Legacy Catalog (for backwards compatibility during migration)
-export type {
-  ComponentDefinition,
-  CatalogConfig,
-  Catalog as LegacyCatalog,
-  InferCatalogComponentProps,
-  SystemPromptOptions,
-} from "./catalog";
-
-export {
-  createCatalog,
-  generateCatalogPrompt,
-  generateSystemPrompt,
-} from "./catalog";

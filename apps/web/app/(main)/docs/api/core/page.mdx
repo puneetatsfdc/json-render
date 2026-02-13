@@ -72,8 +72,9 @@ interface Catalog {
 }
 
 interface PromptOptions {
-  system?: string;        // Custom system message intro
-  customRules?: string[]; // Additional rules to append
+  system?: string;           // Custom system message intro
+  customRules?: string[];    // Additional rules to append
+  mode?: "generate" | "chat"; // Output mode (default: "generate")
 }
 
 interface SpecValidationResult<T> {
@@ -203,28 +204,25 @@ Pre-built Zod schemas for common json-render types:
 
 ```typescript
 import {
-  DynamicValueSchema,    // string | number | boolean | null | { path: string }
-  DynamicStringSchema,   // string | { path: string }
-  DynamicNumberSchema,   // number | { path: string }
-  DynamicBooleanSchema,  // boolean | { path: string }
+  DynamicValueSchema,    // string | number | boolean | null | { $state: string }
+  DynamicStringSchema,   // string | { $state: string }
+  DynamicNumberSchema,   // number | { $state: string }
+  DynamicBooleanSchema,  // boolean | { $state: string }
 } from '@json-render/core';
 
-// Dynamic values can be literals or data path references
-type DynamicValue<T> = T | { path: string };
+// Dynamic values can be literals or state path references
+type DynamicValue<T> = T | { $state: string };
 
-// Example: a prop that can be a literal or bound to data
+// Example: a prop that can be a literal or bound to state
 const schema = z.object({
-  label: DynamicStringSchema,  // "Hello" or { path: "/user/name" }
+  label: DynamicStringSchema,  // "Hello" or { $state: "/user/name" }
 });
 ```
 
-### Visibility & Logic Schemas
+### Visibility Schemas
 
 ```typescript
-import {
-  VisibilityConditionSchema,  // Full visibility condition
-  LogicExpressionSchema,      // Logic operators (and, or, not, eq, gt, etc.)
-} from '@json-render/core';
+import { VisibilityConditionSchema } from '@json-render/core';
 
 // Use in component props that need conditional rendering
 const schema = z.object({
@@ -304,6 +302,74 @@ const obj = {};
 applySpecStreamPatch(obj, patch);
 ```
 
+### applySpecPatch
+
+Apply a single SpecStream patch to a Spec object (mutates in place, returns the spec):
+
+```typescript
+import { applySpecPatch } from '@json-render/core';
+
+let spec: Spec = { root: "", elements: {} };
+applySpecPatch(spec, { op: "add", path: "/root", value: "main" });
+
+// For React state updates, spread to create a new reference:
+setSpec({ ...applySpecPatch(spec, patch) });
+```
+
+### nestedToFlat
+
+Convert a nested element tree (with inline children) into the flat `Spec` format:
+
+```typescript
+import { nestedToFlat } from '@json-render/core';
+
+const flat = nestedToFlat({
+  type: "Card",
+  props: { title: "Hello" },
+  children: [
+    { type: "Text", props: { content: "World" }, children: [] }
+  ],
+});
+// { root: "el-0", elements: { "el-0": ..., "el-1": ... } }
+```
+
+### createMixedStreamParser
+
+Parse a mixed stream of text and JSONL patches (used for Chat + GenUI mode):
+
+```typescript
+import { createMixedStreamParser } from '@json-render/core';
+
+const parser = createMixedStreamParser({
+  onText: (text) => appendToMessage(text),
+  onPatch: (patch) => applySpecPatch(spec, patch),
+});
+
+// As chunks arrive from the stream:
+for await (const chunk of stream) {
+  parser.push(chunk);
+}
+parser.flush();
+```
+
+### pipeJsonRender
+
+Pipe an AI SDK `UIMessageStream` through the json-render transform. Lines that parse as JSONL patches are emitted as `data-spec` parts; everything else passes through as text. Used in Chat mode API routes.
+
+```typescript
+import { pipeJsonRender } from '@json-render/core';
+import { createUIMessageStream, createUIMessageStreamResponse } from 'ai';
+
+const stream = createUIMessageStream({
+  execute: async ({ writer }) => {
+    writer.merge(pipeJsonRender(result.toUIMessageStream()));
+  },
+});
+return createUIMessageStreamResponse({ stream });
+```
+
+See [Generation Modes](/docs/generation-modes) for full Chat mode setup.
+
 ### SpecStream Types
 
 Fully compliant with [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902):
@@ -322,6 +388,16 @@ interface SpecStreamCompiler<T> {
   getPatches(): SpecStreamLine[];
   reset(): void;
 }
+
+interface MixedStreamCallbacks {
+  onText: (text: string) => void;
+  onPatch: (patch: SpecStreamLine) => void;
+}
+
+interface MixedStreamParser {
+  push(chunk: string): void;
+  flush(): void;
+}
 ```
 
 ## Utility Functions
@@ -332,10 +408,10 @@ interface SpecStreamCompiler<T> {
 import { getByPath, setByPath } from '@json-render/core';
 
 // Get value by JSON Pointer path
-const value = getByPath(data, '/user/name');  // "Alice"
+const value = getByPath(state, '/user/name');  // "Alice"
 
 // Set value by path (mutates object)
-setByPath(data, '/user/email', 'alice@example.com');
+setByPath(state, '/user/email', 'alice@example.com');
 ```
 
 ### resolveDynamicValue
@@ -343,9 +419,9 @@ setByPath(data, '/user/email', 'alice@example.com');
 ```typescript
 import { resolveDynamicValue } from '@json-render/core';
 
-// Resolve a dynamic value against data
-const name = resolveDynamicValue("Hello", data);        // "Hello"
-const name2 = resolveDynamicValue({ path: "/user/name" }, data);  // "Alice"
+// Resolve a dynamic value against state
+const name = resolveDynamicValue("Hello", state);        // "Hello"
+const name2 = resolveDynamicValue({ $state: "/user/name" }, state);  // "Alice"
 ```
 
 ### findFormValue
@@ -354,32 +430,88 @@ const name2 = resolveDynamicValue({ path: "/user/name" }, data);  // "Alice"
 import { findFormValue } from '@json-render/core';
 
 // Find form values regardless of path format
-// Checks: params.name, params["form.name"], data["form.name"], data.form.name
-const value = findFormValue("name", params, data);
+// Checks: params.name, params["form.name"], state["form.name"], state.form.name
+const value = findFormValue("name", params, state);
+```
+
+## buildUserPrompt
+
+Build structured user prompts for AI generation, with support for refinement and state context.
+
+```typescript
+import { buildUserPrompt } from '@json-render/core';
+
+function buildUserPrompt(options: UserPromptOptions): string
+
+interface UserPromptOptions {
+  prompt: string;                        // The user's text prompt
+  currentSpec?: Spec | null;             // Existing spec to refine (triggers patch-only mode)
+  state?: Record<string, unknown> | null; // Runtime state context to include
+  maxPromptLength?: number;              // Max length for user text (truncates before wrapping)
+}
+```
+
+### Fresh generation
+
+```typescript
+const userPrompt = buildUserPrompt({ prompt: "create a todo app" });
+```
+
+### Refinement (patch-only mode)
+
+When `currentSpec` is provided, the prompt instructs the AI to output only the patches needed for the change, not recreate the entire spec:
+
+```typescript
+const userPrompt = buildUserPrompt({
+  prompt: "add a dark mode toggle",
+  currentSpec: existingSpec,
+});
+```
+
+### With state context
+
+Include runtime state so the AI knows what data is available:
+
+```typescript
+const userPrompt = buildUserPrompt({
+  prompt: "show my data",
+  state: { todos: [{ text: "Buy milk" }] },
+});
 ```
 
 ## evaluateVisibility
 
-Evaluates a visibility condition against data and auth state.
+Evaluates a visibility condition against the state model.
 
 ```typescript
 function evaluateVisibility(
   condition: VisibilityCondition | undefined,
-  data: Record<string, unknown>,
-  auth?: AuthState
+  ctx: VisibilityContext
 ): boolean
 
+interface VisibilityContext {
+  stateModel: StateModel;
+  repeatItem?: unknown;    // Current repeat item (inside repeat scope)
+  repeatIndex?: number;    // Current repeat array index (inside repeat scope)
+}
+
 type VisibilityCondition =
-  | { path: string }
-  | { auth: 'signedIn' | 'signedOut' | string }
-  | { and: VisibilityCondition[] }
-  | { or: VisibilityCondition[] }
-  | { not: VisibilityCondition }
-  | { eq: [DynamicValue, DynamicValue] }
-  | { gt: [DynamicValue, DynamicValue] }
-  | { gte: [DynamicValue, DynamicValue] }
-  | { lt: [DynamicValue, DynamicValue] }
-  | { lte: [DynamicValue, DynamicValue] };
+  | { $state: string }                                    // truthiness
+  | { $state: string; not: true }                         // falsy
+  | { $state: string; eq: unknown }                       // equality
+  | { $state: string; neq: unknown }                      // inequality
+  | { $state: string; gt: number }                        // greater than
+  | { $state: string; gte: number }                       // gte
+  | { $state: string; lt: number }                        // lt
+  | { $state: string; lte: number }                       // lte
+  | { $item: string }                                     // item field (repeat scope)
+  | { $item: string; eq: unknown }                        // item field equality
+  | { $index: true }                                      // index truthiness (repeat scope)
+  | { $index: true; gt: number }                          // index comparison
+  | VisibilityCondition[]                                 // implicit AND
+  | { $and: VisibilityCondition[] }                       // explicit AND
+  | { $or: VisibilityCondition[] }                        // OR
+  | boolean;                                              // always / never
 ```
 
 ## Types
@@ -388,32 +520,35 @@ type VisibilityCondition =
 
 ```typescript
 interface UIElement {
-  key: string;
   type: string;
   props: Record<string, unknown>;
   children?: string[];          // Keys of child elements
   visible?: VisibilityCondition;
-  validation?: ValidationSchema;
+  on?: Record<string, ActionBinding | ActionBinding[]>;  // Event bindings
+  repeat?: { statePath: string; key?: string };           // Repeat for arrays
 }
 ```
+
+Elements are stored in the `elements` map keyed by string IDs. The key comes from the map, not from the element itself.
 
 ### Spec (Element Tree)
 
 ```typescript
 interface Spec {
-  root: string | null;         // Key of root element
-  elements: Record<string, UIElement>;
+  root: string | null;                        // Key of root element
+  elements: Record<string, UIElement>;        // Flat element map
+  state?: Record<string, unknown>;            // Initial state model
 }
 ```
 
 Elements are stored as a flat map with string keys. The tree structure is built by following the `children` arrays.
 
-### Action
+### ActionBinding
 
 ```typescript
-interface Action {
-  name: string;
-  params?: Record<string, unknown>;
+interface ActionBinding {
+  action: string;
+  params?: Record<string, DynamicValue>;
   confirm?: {
     title: string;
     message: string;
@@ -433,7 +568,7 @@ interface ValidationSchema {
 }
 
 interface ValidationCheck {
-  fn: string;
+  type: string;
   args?: Record<string, unknown>;
   message: string;
 }

@@ -14,6 +14,7 @@ const SYSTEM_PROMPT = playgroundCatalog.prompt({
     "For content-heavy UIs (blogs, dashboards, product listings): use Stack or Grid as root. Use Grid with 2-3 columns for card layouts.",
     "Wrap each repeated item in a Card for visual separation and structure.",
     "Use realistic, professional sample data. Include 3-5 items with varied content. Never leave state arrays empty.",
+    'For form inputs (Input, Textarea, Select), always include checks for validation (e.g. required, email, minLength). Always pair checks with a $bindState expression on the value prop (e.g. { "$bindState": "/path" }).',
   ],
 });
 
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
         });
         controller.enqueue(encoder.encode(`\n${meta}\n`));
       } catch {
-        // Usage not available -- skip silently
+        // Usage not available — skip silently
       }
       controller.close();
     },

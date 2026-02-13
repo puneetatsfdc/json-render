@@ -41,13 +41,13 @@ Start by defining the JSON structure your system will use. Here's an example of 
 
 ## 2. Create the Catalog
 
-Define a catalog that describes your components and validates props:
+Define a catalog that describes your components and validates props using `defineCatalog` — see [Catalog](/docs/catalog).
 
 ```typescript
-import { createCatalog } from '@json-render/core';
+import { defineCatalog } from '@json-render/core';
 import { z } from 'zod';
 
-export const dashboardCatalog = createCatalog({
+export const dashboardCatalog = defineCatalog(mySchema, {
   components: {
     metric: {
       description: 'Displays a single metric value',
@@ -240,11 +240,9 @@ const response = await generateText({
 
 ## 6. Validate Specs
 
-Validate incoming specs against your schema:
+Validate incoming specs against your schema. Use `catalog.validate()` to check AI output against the catalog's Zod schema:
 
 ```typescript
-import { validate } from '@json-render/core';
-
 function validateDashboard(spec: unknown) {
   // Validate root structure
   const rootResult = DashboardSchema.safeParse(spec);
@@ -252,19 +250,13 @@ function validateDashboard(spec: unknown) {
     return { valid: false, errors: rootResult.error.errors };
   }
 
-  // Validate each widget against catalog
-  const errors: string[] = [];
-  for (const widget of rootResult.data.widgets) {
-    const result = validate(
-      { type: widget.type, props: widget },
-      dashboardCatalog
-    );
-    if (!result.valid) {
-      errors.push(...result.errors.map(e => `${widget.type}: ${e}`));
-    }
+  // Validate each widget's props against the catalog
+  const result = dashboardCatalog.validate(spec);
+  if (!result.success) {
+    return { valid: false, errors: result.error.errors };
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: true, errors: [] };
 }
 ```
 

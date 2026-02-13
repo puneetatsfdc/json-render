@@ -13,7 +13,7 @@ export async function POST(req: Request) {
 
   const userPrompt = buildUserPrompt({
     prompt,
-    state: context?.data,
+    state: context?.state,
   });
 
   const result = streamText({

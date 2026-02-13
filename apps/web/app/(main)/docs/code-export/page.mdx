@@ -70,12 +70,12 @@ The exported components are standalone with no json-render dependencies. They re
 // Generated component (standalone)
 interface MetricProps {
   label: string;
-  valuePath: string;
+  statePath: string;
   data?: Record<string, unknown>;
 }
 
-export function Metric({ label, valuePath, data }: MetricProps) {
-  const value = data ? getByPath(data, valuePath) : undefined;
+export function Metric({ label, statePath, data }: MetricProps) {
+  const value = data ? getByPath(data, statePath) : undefined;
   return (
     <div>
       <span>{label}</span>
@@ -92,8 +92,8 @@ export function Metric({ label, valuePath, data }: MetricProps) {
 ```typescript
 import { traverseSpec } from '@json-render/codegen';
 
-traverseSpec(spec, (element, depth, parent) => {
-  console.log(' '.repeat(depth * 2) + element.type);
+traverseSpec(spec, (element, key, depth, parent) => {
+  console.log(' '.repeat(depth * 2) + `${key}: ${element.type}`);
 });
 ```
 

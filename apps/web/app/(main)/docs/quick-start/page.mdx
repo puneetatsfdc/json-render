@@ -74,7 +74,7 @@ export const { registry } = defineRegistry(catalog, {
     Button: ({ props, emit }) => (
       <button
         className="px-4 py-2 bg-blue-500 text-white rounded"
-        onClick={() => emit?.("press")}
+        onClick={() => emit("press")}
       >
         {props.label}
       </button>
@@ -119,7 +119,7 @@ Use providers and the `Renderer` with your registry to display AI-generated UI:
 // app/page.tsx
 'use client';
 
-import { Renderer, StateProvider, ActionProvider, VisibilityProvider, useUIStream } from '@json-render/react';
+import { Renderer, StateProvider, ActionProvider, VisibilityProvider, ValidationProvider, useUIStream } from '@json-render/react';
 import { registry } from '@/lib/registry';
 
 export default function Page() {
@@ -140,20 +140,22 @@ export default function Page() {
           submit: (params) => console.log('Submit:', params),
           navigate: (params) => console.log('Navigate:', params),
         }}>
-          <form onSubmit={handleSubmit}>
-            <input
-              name="prompt"
-              placeholder="Describe what you want..."
-              className="border p-2 rounded"
-            />
-            <button type="submit" disabled={isStreaming}>
-              Generate
-            </button>
-          </form>
+          <ValidationProvider customFunctions={{}}>
+            <form onSubmit={handleSubmit}>
+              <input
+                name="prompt"
+                placeholder="Describe what you want..."
+                className="border p-2 rounded"
+              />
+              <button type="submit" disabled={isStreaming}>
+                Generate
+              </button>
+            </form>
 
-          <div className="mt-8">
-            <Renderer spec={spec} registry={registry} loading={isStreaming} />
-          </div>
+            <div className="mt-8">
+              <Renderer spec={spec} registry={registry} loading={isStreaming} />
+            </div>
+          </ValidationProvider>
         </ActionProvider>
       </VisibilityProvider>
     </StateProvider>

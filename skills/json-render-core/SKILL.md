@@ -81,15 +81,19 @@ const finalSpec = compiler.getResult();
 
 Any prop value can be a dynamic expression resolved at render time:
 
-- **`{ "$path": "/state/key" }`** - reads a value from the state model
+- **`{ "$state": "/state/key" }`** - reads a value from the state model (one-way read)
+- **`{ "$bindState": "/path" }`** - two-way binding: reads from state and enables write-back. Use on the natural value prop (value, checked, pressed, etc.) of form components.
+- **`{ "$bindItem": "field" }`** - two-way binding to a repeat item field. Use inside repeat scopes.
 - **`{ "$cond": <condition>, "$then": <value>, "$else": <value> }`** - evaluates a visibility condition and picks a branch
 
-`$cond` uses the same syntax as visibility conditions (`eq`, `neq`, `path`, `and`, `or`, `not`). `$then` and `$else` can themselves be expressions (recursive).
+`$cond` uses the same syntax as visibility conditions (`$state`, `eq`, `neq`, `not`, arrays for AND). `$then` and `$else` can themselves be expressions (recursive).
+
+Components do not use a `statePath` prop for two-way binding. Instead, use `{ "$bindState": "/path" }` on the natural value prop (e.g. `value`, `checked`, `pressed`).
 
 ```json
 {
   "color": {
-    "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
+    "$cond": { "$state": "/activeTab", "eq": "home" },
     "$then": "#007AFF",
     "$else": "#8E8E93"
   }
@@ -126,8 +130,31 @@ Validate spec structure and auto-fix common issues:
 ```typescript
 import { validateSpec, autoFixSpec } from "@json-render/core";
 
-const { valid, issues } = validateSpec(spec, catalog);
+const { valid, issues } = validateSpec(spec);
 const fixed = autoFixSpec(spec);
+```
+
+## Visibility Conditions
+
+Control element visibility with state-based conditions. `VisibilityContext` is `{ stateModel: StateModel }`.
+
+```typescript
+import { visibility } from "@json-render/core";
+
+// Syntax
+{ "$state": "/path" }                    // truthiness
+{ "$state": "/path", "not": true }      // falsy
+{ "$state": "/path", "eq": value }      // equality
+[ cond1, cond2 ]                         // implicit AND
+
+// Helpers
+visibility.when("/path")                 // { $state: "/path" }
+visibility.unless("/path")               // { $state: "/path", not: true }
+visibility.eq("/path", val)              // { $state: "/path", eq: val }
+visibility.and(cond1, cond2)             // { $and: [cond1, cond2] }
+visibility.or(cond1, cond2)              // { $or: [cond1, cond2] }
+visibility.always                        // true
+visibility.never                         // false
 ```
 
 ## Key Exports

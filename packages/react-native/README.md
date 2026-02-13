@@ -141,6 +141,10 @@ function App({ spec }) {
 | `ListItem` | List row with title, subtitle, accessory |
 | `Modal` | Bottom sheet modal |
 
+## Visibility Conditions
+
+Elements can use `visible` to show/hide based on state. Same syntax as [@json-render/react](../react/README.md#visibility-conditions): `{ "$state": "/path" }`, `{ "$state": "/path", "eq": value }`, `{ "$state": "/path", "not": true }`, or `[ cond1, cond2 ]` for AND.
+
 ## Pressable Component
 
 The `Pressable` component wraps children and triggers an action on press. It's essential for building interactive UIs like tab bars:
@@ -150,7 +154,7 @@ The `Pressable` component wraps children and triggers an action on press. It's e
   "type": "Pressable",
   "props": {
     "action": "setState",
-    "actionParams": { "path": "/activeTab", "value": "home" }
+    "actionParams": { "statePath": "/activeTab", "value": "home" }
   },
   "children": ["home-tab-icon", "home-tab-label"]
 }
@@ -163,7 +167,7 @@ The `setState` action is handled automatically by `ActionProvider`. It updates t
 ```json
 {
   "action": "setState",
-  "actionParams": { "path": "/activeTab", "value": "home" }
+  "actionParams": { "statePath": "/activeTab", "value": "home" }
 }
 ```
 
@@ -176,12 +180,12 @@ Any prop value can be a dynamic expression resolved at render time:
   "type": "Icon",
   "props": {
     "name": {
-      "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
+      "$cond": { "$state": "/activeTab", "eq": "home" },
       "$then": "home",
       "$else": "home-outline"
     },
     "color": {
-      "$cond": { "eq": [{ "path": "/activeTab" }, "home"] },
+      "$cond": { "$state": "/activeTab", "eq": "home" },
       "$then": "#007AFF",
       "$else": "#8E8E93"
     }
@@ -195,9 +199,9 @@ See [@json-render/core](../core/README.md) for full expression syntax.
 
 Combine `Pressable`, `setState`, visibility conditions, and dynamic props for functional tabs:
 
-1. Each tab button is a `Pressable` with `action: "setState"` and `actionParams: { path: "/activeTab", value: "tabName" }`
+1. Each tab button is a `Pressable` with `action: "setState"` and `actionParams: { statePath: "/activeTab", value: "tabName" }`
 2. Tab icons/labels use `$cond` dynamic props for active/inactive styling
-3. Tab content sections use `visible` conditions: `{ "eq": [{ "path": "/activeTab" }, "tabName"] }`
+3. Tab content sections use `visible` conditions: `{ "$state": "/activeTab", "eq": "tabName" }`
 
 ## AI Prompt Generation
 
@@ -214,8 +218,8 @@ const systemPrompt = catalog.prompt({
 
 | Hook | Purpose |
 |------|---------|
-| `useStateStore()` | Access data context (`data`, `get`, `set`) |
-| `useStateValue(path)` | Get single value from data |
+| `useStateStore()` | Access state context (`state`, `get`, `set`, `update`) |
+| `useStateValue(path)` | Get single value from state |
 | `useStateBinding(path)` | Two-way data binding (returns `[value, setValue]`) |
 | `useVisibility()` | Access visibility evaluation |
 | `useIsVisible(condition)` | Check if condition is met |

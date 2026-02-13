@@ -41,7 +41,7 @@ See the [Custom Schema guide](/docs/custom-schema) to learn how to implement sup
     },
     "text-1": {
       "type": "Text",
-      "props": { "content": "Welcome, $data.user.name" },
+      "props": { "content": { "$state": "/user/name" } },
       "children": []
     },
     "button-1": {
@@ -64,24 +64,26 @@ interface Element {
   type: string;                // Component type from catalog
   props: Record<string, any>;  // Component properties
   children: string[];          // Array of child element keys
-  visible?: VisibilityRule;    // Conditional display
+  visible?: VisibilityCondition;  // Conditional display
 }
 ```
 
 ### Data Binding Syntax
 
-Reference dynamic data using the `$data` prefix in props:
+Reference dynamic data using `$state` expressions in props. The value is a JSON Pointer path into the state model:
 
 ```json
 {
   "type": "Text",
   "props": {
-    "content": "$data.user.name",
-    "count": "$data.items.length"
+    "content": { "$state": "/user/name" },
+    "count": { "$state": "/items/count" }
   },
   "children": []
 }
 ```
+
+json-render also supports `$item` and `$index` expressions for lists, two-way binding via `$bindState` / `$bindItem`, and conditional props. See [Data Binding](/docs/data-binding) for the full reference.
 
 ### Action Format
 
@@ -121,7 +123,7 @@ const MyElementSchema = z.object({
 // Define your own data binding format
 const BoundValue = z.object({
   literal: z.string().optional(),
-  path: z.string().optional(),  // e.g., "/users/0/name"
+  source: z.string().optional(),  // e.g., "/users/0/name"
 });
 
 // Define your own action format

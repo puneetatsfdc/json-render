@@ -39,7 +39,6 @@ export {
 export {
   RepeatScopeProvider,
   useRepeatScope,
-  rewriteRepeatTokens,
   type RepeatScopeValue,
 } from "./contexts/repeat-scope";
 
@@ -80,7 +79,6 @@ export {
   // Low-level
   Renderer,
   JSONUIProvider,
-  createRendererFromCatalog,
   type ComponentRenderProps,
   type ComponentRenderer,
   type ComponentRegistry,
@@ -94,6 +92,7 @@ export {
 // Hooks
 export {
   useUIStream,
+  useBoundProp,
   flatToTree,
   type UseUIStreamOptions,
   type UseUIStreamReturn,
