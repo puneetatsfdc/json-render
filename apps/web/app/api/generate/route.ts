@@ -74,7 +74,9 @@ export async function POST(req: Request) {
     model,
     system: SYSTEM_PROMPT,
     prompt: userPrompt,
-    temperature: 0.7,
+    // Keep generation deterministic so the same prompt/context yields the same UI output.
+    temperature: 0,
+    topP: 1,
   });
 
   // Stream the text, then append token usage metadata at the end
