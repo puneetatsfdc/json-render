@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   defineRegistry,
   useBoundProp,
@@ -781,9 +781,14 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       const setValue = isBound ? setBoundValue : setLocalValue;
 
       const hasValidation = !!(bindings?.value && props.checks?.length);
-      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
-        checks: props.checks ?? [],
-      });
+      const validationConfig = useMemo(
+        () => ({ checks: props.checks ?? [] }),
+        [props.checks],
+      );
+      const { errors, validate } = useFieldValidation(
+        bindings?.value ?? "",
+        hasValidation ? validationConfig : undefined,
+      );
 
       return (
         <div className="space-y-2">
@@ -822,9 +827,14 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       const setValue = isBound ? setBoundValue : setLocalValue;
 
       const hasValidation = !!(bindings?.value && props.checks?.length);
-      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
-        checks: props.checks ?? [],
-      });
+      const validationConfig = useMemo(
+        () => ({ checks: props.checks ?? [] }),
+        [props.checks],
+      );
+      const { errors, validate } = useFieldValidation(
+        bindings?.value ?? "",
+        hasValidation ? validationConfig : undefined,
+      );
 
       return (
         <div className="space-y-2">
@@ -864,9 +874,14 @@ export const { registry, executeAction } = defineRegistry(playgroundCatalog, {
       );
 
       const hasValidation = !!(bindings?.value && props.checks?.length);
-      const { errors, validate } = useFieldValidation(bindings?.value ?? "", {
-        checks: props.checks ?? [],
-      });
+      const validationConfig = useMemo(
+        () => ({ checks: props.checks ?? [] }),
+        [props.checks],
+      );
+      const { errors, validate } = useFieldValidation(
+        bindings?.value ?? "",
+        hasValidation ? validationConfig : undefined,
+      );
 
       return (
         <div className="space-y-2">

@@ -1,7 +1,12 @@
 import { streamText } from "ai";
+import { createGatewayProvider } from "@ai-sdk/gateway";
 import { headers } from "next/headers";
 import { buildUserPrompt } from "@json-render/core";
-import { minuteRateLimit, dailyRateLimit } from "@/lib/rate-limit";
+import {
+  minuteRateLimit,
+  dailyRateLimit,
+  isRateLimitingEnabled,
+} from "@/lib/rate-limit";
 import { playgroundCatalog } from "@/lib/render/catalog";
 
 export const maxDuration = 30;
@@ -20,6 +25,12 @@ const SYSTEM_PROMPT = playgroundCatalog.prompt({
 
 const MAX_PROMPT_LENGTH = 500;
 const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
+
+// Create gateway provider with explicit API key
+// This ensures the API key is properly passed even if process.env isn't available at build time
+const gateway = createGatewayProvider({
+  apiKey: process.env.AI_GATEWAY_API_KEY,
+});
 
 export async function POST(req: Request) {
   // Get client IP for rate limiting
@@ -56,8 +67,11 @@ export async function POST(req: Request) {
     maxPromptLength: MAX_PROMPT_LENGTH,
   });
 
+  const modelId = process.env.AI_GATEWAY_MODEL || DEFAULT_MODEL;
+  const model = gateway(modelId);
+
   const result = streamText({
-    model: process.env.AI_GATEWAY_MODEL || DEFAULT_MODEL,
+    model,
     system: SYSTEM_PROMPT,
     prompt: userPrompt,
     temperature: 0.7,

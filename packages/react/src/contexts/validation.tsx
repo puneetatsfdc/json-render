@@ -6,6 +6,8 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  useRef,
+  useEffect,
   type ReactNode,
 } from "react";
 import {
@@ -278,12 +280,35 @@ export function useFieldValidation(
     registerField,
   } = useValidation();
 
-  // Register field on mount
-  React.useEffect(() => {
+  // Use ref to track the last registered config to avoid re-registering when config is structurally equal
+  const lastConfigRef = useRef<ValidationConfig | undefined>(undefined);
+  
+  // Create a stable key for the config to use in dependency array
+  // This helps React know when to re-run the effect, but we still do structural comparison inside
+  const configKey = useMemo(() => {
+    if (!config) return null;
+    // Create a simple key based on config structure (not perfect but good enough for dependency tracking)
+    const checksKey = config.checks?.map(c => `${c.type}:${c.message}`).join(',') ?? '';
+    return `${config.validateOn ?? 'default'}:${checksKey}`;
+  }, [config]);
+
+  // Register field on mount and when config actually changes
+  useEffect(() => {
     if (config) {
-      registerField(path, config);
+      // Only register if config is different from last registered config (structural comparison)
+      if (
+        !lastConfigRef.current ||
+        !validationConfigEqual(lastConfigRef.current, config)
+      ) {
+        registerField(path, config);
+        lastConfigRef.current = config;
+      }
+    } else {
+      // Clear registration if config becomes undefined
+      lastConfigRef.current = undefined;
     }
-  }, [path, config, registerField]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, registerField, configKey]); // Use configKey instead of config directly
 
   const state = fieldStates[path] ?? {
     touched: false,

@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import { createGatewayProvider } from "@ai-sdk/gateway";
 import type { ModelMessage, UIMessage } from "ai";
 import { createBashTool } from "bash-tool";
 import { headers } from "next/headers";
@@ -11,6 +12,11 @@ import { minuteRateLimit, dailyRateLimit } from "@/lib/rate-limit";
 export const maxDuration = 60;
 
 const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
+
+// Create gateway provider with explicit API key
+const gateway = createGatewayProvider({
+  apiKey: process.env.AI_GATEWAY_API_KEY,
+});
 
 const SYSTEM_PROMPT = `You are a helpful documentation assistant for json-render, a library for AI-generated UI with guardrails.
 
@@ -112,8 +118,10 @@ export async function POST(req: Request) {
     tools: { bash, readFile },
   } = await createBashTool({ files: docsFiles });
 
+  const model = gateway(DEFAULT_MODEL);
+
   const result = streamText({
-    model: DEFAULT_MODEL,
+    model,
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(5),

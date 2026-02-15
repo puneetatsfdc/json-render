@@ -2,6 +2,31 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Environment Variables
+
+Create a `.env.local` file in the `apps/web` directory with the following variables:
+
+```bash
+# Required: AI Gateway API Key
+# Get your API key from https://ai-sdk.dev
+AI_GATEWAY_API_KEY=your_api_key_here
+
+# Optional: Override the default model
+# Default: anthropic/claude-opus-4.1
+AI_GATEWAY_MODEL=anthropic/claude-opus-4.1
+
+# Optional: Rate Limiting (Upstash Redis)
+# If not provided, rate limiting will be disabled
+KV_REST_API_URL=your_upstash_redis_url
+KV_REST_API_TOKEN=your_upstash_redis_token
+RATE_LIMIT_PER_MINUTE=10
+RATE_LIMIT_PER_DAY=100
+```
+
+**Note:** The `AI_GATEWAY_API_KEY` is required for the app to function. Without it, you'll get an authentication error when trying to generate UI.
+
+### Running the Development Server
+
 First, run the development server:
 
 ```bash
