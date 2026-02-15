@@ -19,7 +19,7 @@ const SYSTEM_PROMPT = playgroundCatalog.prompt({
 });
 
 const MAX_PROMPT_LENGTH = 500;
-const DEFAULT_MODEL = "anthropic/claude-haiku-4.5";
+const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
 
 export async function POST(req: Request) {
   // Get client IP for rate limiting
